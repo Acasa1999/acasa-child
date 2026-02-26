@@ -1,6 +1,7 @@
 <?php
 /**
  * ACASA Child theme functions
+ * Managed via Git + Codex.
  */
 
 add_action('wp_enqueue_scripts', function () {
