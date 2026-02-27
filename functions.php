@@ -30,6 +30,12 @@ add_action('admin_menu', function () {
     );
 });
 
+add_action('admin_enqueue_scripts', function (string $hook_suffix): void {
+    if ($hook_suffix === 'tools_page_acasa-branding') {
+        wp_enqueue_media();
+    }
+});
+
 /**
  * Define the desired branding state.
  *
@@ -51,6 +57,14 @@ add_action('admin_menu', function () {
  * NOTE: GeneratePress stores many settings in the 'generate_settings' option.
  */
 function acasa_branding_target_map(): array {
+    $custom_logo_id = absint(get_option('acasa_brand_logo_id', 0));
+    $theme_mods = [
+        'display_header_text' => false,
+    ];
+    if ($custom_logo_id > 0) {
+        $theme_mods['custom_logo'] = $custom_logo_id;
+    }
+
     return [
         'options' => [
             'generate_settings' => [
@@ -396,14 +410,11 @@ function acasa_branding_target_map(): array {
 				'hide_tagline' => true,
 
                 // Intentional exclusions for now:
-                // - 'retina_logo' (environment-specific URL)
                 // - menu/widget theme_mods
                 // - 'hide_title'/'hide_tagline' might be content/presentation policy; add later if desired
             ],
         ],
-        'theme_mods' => [
-    'display_header_text' => false,
-],
+        'theme_mods' => $theme_mods,
     ];
 }
 
@@ -508,6 +519,16 @@ function acasa_compute_plan(array $target_map): array {
  */
 function acasa_apply_branding_seed(bool $force = false): array {
     $target = acasa_branding_target_map();
+    $retina_logo_id = absint(get_option('acasa_brand_logo_retina_id', 0));
+    if ($retina_logo_id > 0) {
+        $retina_logo_url = wp_get_attachment_url($retina_logo_id);
+        if (is_string($retina_logo_url) && $retina_logo_url !== '') {
+            if (!isset($target['options']['generate_settings']) || !is_array($target['options']['generate_settings'])) {
+                $target['options']['generate_settings'] = [];
+            }
+            $target['options']['generate_settings']['retina_logo'] = $retina_logo_url;
+        }
+    }
 
     // Compute plan first, so we can report what changed.
     $plan = acasa_compute_plan($target);
@@ -614,7 +635,13 @@ function acasa_render_branding_tools_page(): void {
         $action = sanitize_text_field($_POST['acasa_branding_action']);
 
         try {
-            if ($action === 'snapshot') {
+            if ($action === 'save_logo_ids') {
+                $logo_id        = isset($_POST['acasa_brand_logo_id']) ? absint($_POST['acasa_brand_logo_id']) : 0;
+                $logo_retina_id = isset($_POST['acasa_brand_logo_retina_id']) ? absint($_POST['acasa_brand_logo_retina_id']) : 0;
+                update_option('acasa_brand_logo_id', $logo_id);
+                update_option('acasa_brand_logo_retina_id', $logo_retina_id);
+                $notice = 'Logo settings saved.';
+            } elseif ($action === 'snapshot') {
                 acasa_store_snapshot();
                 $notice = 'Snapshot stored. You can rollback to it later.';
             } elseif ($action === 'rollback') {
@@ -638,11 +665,14 @@ function acasa_render_branding_tools_page(): void {
         }
 
         // Recompute plan after any action
+        $target = acasa_branding_target_map();
         $plan = acasa_compute_plan($target);
     }
 
     $seed_version = intval(get_option('acasa_branding_seed_version', 0));
     $snap_at      = get_option('acasa_branding_snapshot_at', '');
+    $logo_id      = absint(get_option('acasa_brand_logo_id', 0));
+    $retina_id    = absint(get_option('acasa_brand_logo_retina_id', 0));
     $export_data  = [
         'generate_settings' => get_option('generate_settings', null),
         'theme_mods'        => get_theme_mods(),
@@ -675,6 +705,43 @@ function acasa_render_branding_tools_page(): void {
     echo '<form method="post" style="margin: 12px 0;">';
     wp_nonce_field('acasa_branding_tools');
 
+    echo '<h2>Logo enforcement</h2>';
+    echo '<p>Select Media Library images to enforce as logo settings.</p>';
+    echo '<table class="form-table" role="presentation" style="max-width:1200px"><tbody>';
+
+    echo '<tr>';
+    echo '<th scope="row"><label for="acasa_brand_logo_id">Standard logo</label></th>';
+    echo '<td>';
+    echo '<input type="hidden" id="acasa_brand_logo_id" name="acasa_brand_logo_id" value="' . esc_attr((string)$logo_id) . '">';
+    echo '<button type="button" class="button" id="acasa-pick-logo">Select image</button> ';
+    echo '<button type="button" class="button" id="acasa-clear-logo">Clear</button>';
+    echo '<p><strong>Attachment ID:</strong> <span id="acasa-logo-id-text">' . esc_html((string)$logo_id) . '</span></p>';
+    echo '<div id="acasa-logo-preview">';
+    if ($logo_id > 0) {
+        echo wp_get_attachment_image($logo_id, 'thumbnail', false, ['style' => 'max-width:120px;height:auto;']);
+    }
+    echo '</div>';
+    echo '</td>';
+    echo '</tr>';
+
+    echo '<tr>';
+    echo '<th scope="row"><label for="acasa_brand_logo_retina_id">Retina logo (optional)</label></th>';
+    echo '<td>';
+    echo '<input type="hidden" id="acasa_brand_logo_retina_id" name="acasa_brand_logo_retina_id" value="' . esc_attr((string)$retina_id) . '">';
+    echo '<button type="button" class="button" id="acasa-pick-retina-logo">Select image</button> ';
+    echo '<button type="button" class="button" id="acasa-clear-retina-logo">Clear</button>';
+    echo '<p><strong>Attachment ID:</strong> <span id="acasa-retina-id-text">' . esc_html((string)$retina_id) . '</span></p>';
+    echo '<div id="acasa-retina-preview">';
+    if ($retina_id > 0) {
+        echo wp_get_attachment_image($retina_id, 'thumbnail', false, ['style' => 'max-width:120px;height:auto;']);
+    }
+    echo '</div>';
+    echo '</td>';
+    echo '</tr>';
+
+    echo '</tbody></table>';
+    echo '<p><button class="button" name="acasa_branding_action" value="save_logo_ids" type="submit">Save logo settings</button></p>';
+
     echo '<button class="button" name="acasa_branding_action" value="snapshot" type="submit">Create snapshot</button> ';
     echo '<button class="button" name="acasa_branding_action" value="rollback" type="submit" ';
     echo 'onclick="return confirm(\'Rollback will restore the last snapshot. Continue?\')">Rollback to snapshot</button> ';
@@ -685,6 +752,29 @@ function acasa_render_branding_tools_page(): void {
     echo '<button class="button button-secondary" name="acasa_branding_action" value="apply_force" type="submit" ';
     echo 'style="margin-left:8px" ';
     echo 'onclick="return confirm(\'DANGER: This will store a snapshot, then overwrite targeted keys (force). Continue?\')">Apply branding (force)</button>';
+
+    echo '<script>';
+    echo '(function($){';
+    echo 'function bindPicker(buttonSel, clearSel, inputSel, textSel, previewSel){';
+    echo 'var frame;';
+    echo '$(buttonSel).on("click", function(e){e.preventDefault();';
+    echo 'if(frame){frame.open();return;}';
+    echo 'frame = wp.media({title:"Select logo image",button:{text:"Use this image"},multiple:false,library:{type:"image"}});';
+    echo 'frame.on("select", function(){';
+    echo 'var attachment = frame.state().get("selection").first().toJSON();';
+    echo '$(inputSel).val(attachment.id || "0");';
+    echo '$(textSel).text(String(attachment.id || 0));';
+    echo 'var thumb = (attachment.sizes && attachment.sizes.thumbnail && attachment.sizes.thumbnail.url) ? attachment.sizes.thumbnail.url : attachment.url;';
+    echo 'if(thumb){$(previewSel).empty().append($("<img>",{src:String(thumb),style:"max-width:120px;height:auto;",alt:""}));}';
+    echo '});';
+    echo 'frame.open();';
+    echo '});';
+    echo '$(clearSel).on("click", function(e){e.preventDefault();$(inputSel).val("0");$(textSel).text("0");$(previewSel).empty();});';
+    echo '}';
+    echo 'bindPicker("#acasa-pick-logo","#acasa-clear-logo","#acasa_brand_logo_id","#acasa-logo-id-text","#acasa-logo-preview");';
+    echo 'bindPicker("#acasa-pick-retina-logo","#acasa-clear-retina-logo","#acasa_brand_logo_retina_id","#acasa-retina-id-text","#acasa-retina-preview");';
+    echo '})(jQuery);';
+    echo '</script>';
 
     echo '</form>';
 
