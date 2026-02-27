@@ -58,6 +58,7 @@ add_action('admin_enqueue_scripts', function (string $hook_suffix): void {
  */
 function acasa_branding_target_map(): array {
     $custom_logo_id = absint(get_option('acasa_brand_logo_id', 0));
+    $favicon_id = absint(get_option('acasa_brand_favicon_id', 0));
     $theme_mods = [
         'display_header_text' => false,
     ];
@@ -65,9 +66,8 @@ function acasa_branding_target_map(): array {
         $theme_mods['custom_logo'] = $custom_logo_id;
     }
 
-    return [
-        'options' => [
-            'generate_settings' => [
+    $options = [
+        'generate_settings' => [
                 // Palette
                 'global_colors' => [
                     [ 'name' => 'contrast',   'slug' => 'contrast',   'color' => '#101014' ],
@@ -413,7 +413,13 @@ function acasa_branding_target_map(): array {
                 // - menu/widget theme_mods
                 // - 'hide_title'/'hide_tagline' might be content/presentation policy; add later if desired
             ],
-        ],
+    ];
+    if ($favicon_id > 0) {
+        $options['site_icon'] = $favicon_id;
+    }
+
+    return [
+        'options' => $options,
         'theme_mods' => $theme_mods,
     ];
 }
@@ -638,8 +644,10 @@ function acasa_render_branding_tools_page(): void {
             if ($action === 'save_logo_ids') {
                 $logo_id        = isset($_POST['acasa_brand_logo_id']) ? absint($_POST['acasa_brand_logo_id']) : 0;
                 $logo_retina_id = isset($_POST['acasa_brand_logo_retina_id']) ? absint($_POST['acasa_brand_logo_retina_id']) : 0;
+                $favicon_id     = isset($_POST['acasa_brand_favicon_id']) ? absint($_POST['acasa_brand_favicon_id']) : 0;
                 update_option('acasa_brand_logo_id', $logo_id);
                 update_option('acasa_brand_logo_retina_id', $logo_retina_id);
+                update_option('acasa_brand_favicon_id', $favicon_id);
                 $notice = 'Logo settings saved.';
             } elseif ($action === 'snapshot') {
                 acasa_store_snapshot();
@@ -673,6 +681,7 @@ function acasa_render_branding_tools_page(): void {
     $snap_at      = get_option('acasa_branding_snapshot_at', '');
     $logo_id      = absint(get_option('acasa_brand_logo_id', 0));
     $retina_id    = absint(get_option('acasa_brand_logo_retina_id', 0));
+    $favicon_id   = absint(get_option('acasa_brand_favicon_id', 0));
     $export_data  = [
         'generate_settings' => get_option('generate_settings', null),
         'theme_mods'        => get_theme_mods(),
@@ -739,6 +748,21 @@ function acasa_render_branding_tools_page(): void {
     echo '</td>';
     echo '</tr>';
 
+    echo '<tr>';
+    echo '<th scope="row"><label for="acasa_brand_favicon_id">Favicon (site icon)</label></th>';
+    echo '<td>';
+    echo '<input type="hidden" id="acasa_brand_favicon_id" name="acasa_brand_favicon_id" value="' . esc_attr((string)$favicon_id) . '">';
+    echo '<button type="button" class="button" id="acasa-pick-favicon">Select image</button> ';
+    echo '<button type="button" class="button" id="acasa-clear-favicon">Clear</button>';
+    echo '<p><strong>Attachment ID:</strong> <span id="acasa-favicon-id-text">' . esc_html((string)$favicon_id) . '</span></p>';
+    echo '<div id="acasa-favicon-preview">';
+    if ($favicon_id > 0) {
+        echo wp_get_attachment_image($favicon_id, 'thumbnail', false, ['style' => 'max-width:120px;height:auto;']);
+    }
+    echo '</div>';
+    echo '</td>';
+    echo '</tr>';
+
     echo '</tbody></table>';
     echo '<p><button class="button" name="acasa_branding_action" value="save_logo_ids" type="submit">Save logo settings</button></p>';
 
@@ -773,6 +797,7 @@ function acasa_render_branding_tools_page(): void {
     echo '}';
     echo 'bindPicker("#acasa-pick-logo","#acasa-clear-logo","#acasa_brand_logo_id","#acasa-logo-id-text","#acasa-logo-preview");';
     echo 'bindPicker("#acasa-pick-retina-logo","#acasa-clear-retina-logo","#acasa_brand_logo_retina_id","#acasa-retina-id-text","#acasa-retina-preview");';
+    echo 'bindPicker("#acasa-pick-favicon","#acasa-clear-favicon","#acasa_brand_favicon_id","#acasa-favicon-id-text","#acasa-favicon-preview");';
     echo '})(jQuery);';
     echo '</script>';
 
