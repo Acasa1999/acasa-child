@@ -696,8 +696,33 @@ function acasa_render_branding_tools_page(): void {
     echo '<p><strong>Planned changes:</strong> Options: ' . intval($plan['counts']['options'])
        . ' | Theme mods: ' . intval($plan['counts']['theme_mods']) . '</p>';
 
+    $render_diff_value = static function ($value): string {
+        $json = wp_json_encode($value, JSON_PRETTY_PRINT);
+        if (!is_string($json)) {
+            $json = 'null';
+        }
+
+        $limit   = 200;
+        $preview = function_exists('mb_substr') ? mb_substr($json, 0, $limit) : substr($json, 0, $limit);
+        $length  = function_exists('mb_strlen') ? mb_strlen($json) : strlen($json);
+        if ($length > $limit) {
+            $preview .= '...';
+        }
+
+        $out  = '<code style="display:block;white-space:pre-wrap;word-break:break-word;">' . esc_html($preview) . '</code>';
+        $out .= '<details style="margin-top:6px"><summary>Show full</summary>';
+        $out .= '<pre style="margin:8px 0 0;white-space:pre-wrap;word-break:break-word;">' . esc_html($json) . '</pre>';
+        $out .= '</details>';
+
+        return $out;
+    };
+
     // Render plan table
-    echo '<table class="widefat striped" style="max-width:1200px">';
+    echo '<style>';
+    echo '#acasa-dry-run-table{table-layout:fixed;width:100%;max-width:1200px}';
+    echo '#acasa-dry-run-table th,#acasa-dry-run-table td{vertical-align:top;overflow-wrap:anywhere;word-break:break-word}';
+    echo '</style>';
+    echo '<table id="acasa-dry-run-table" class="widefat striped">';
     echo '<thead><tr><th>Type</th><th>Name</th><th>Key</th><th>From</th><th>To</th></tr></thead><tbody>';
 
     $rows = 0;
@@ -709,8 +734,8 @@ function acasa_render_branding_tools_page(): void {
             echo '<td>Option</td>';
             echo '<td>' . esc_html($option_name) . '</td>';
             echo '<td>' . esc_html((string)$k) . '</td>';
-            echo '<td><code>' . esc_html(wp_json_encode($delta['from'])) . '</code></td>';
-            echo '<td><code>' . esc_html(wp_json_encode($delta['to'])) . '</code></td>';
+            echo '<td>' . $render_diff_value($delta['from']) . '</td>';
+            echo '<td>' . $render_diff_value($delta['to']) . '</td>';
             echo '</tr>';
         }
     }
@@ -721,8 +746,8 @@ function acasa_render_branding_tools_page(): void {
         echo '<td>Theme mod</td>';
         echo '<td>' . esc_html($mod_name) . '</td>';
         echo '<td>—</td>';
-        echo '<td><code>' . esc_html(wp_json_encode($delta['from'])) . '</code></td>';
-        echo '<td><code>' . esc_html(wp_json_encode($delta['to'])) . '</code></td>';
+        echo '<td>' . $render_diff_value($delta['from']) . '</td>';
+        echo '<td>' . $render_diff_value($delta['to']) . '</td>';
         echo '</tr>';
     }
 
