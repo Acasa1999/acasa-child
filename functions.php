@@ -53,13 +53,355 @@ add_action('admin_menu', function () {
 function acasa_branding_target_map(): array {
     return [
         'options' => [
-            // 'generate_settings' => [
-            //     'container_width' => '1200',
-            //     'link_color'      => '#fcd602',
-            // ],
+            'generate_settings' => [
+                // Palette
+                'global_colors' => [
+                    [ 'name' => 'contrast',   'slug' => 'contrast',   'color' => '#101014' ],
+                    [ 'name' => 'contrast-2', 'slug' => 'contrast-2', 'color' => '#101014' ],
+                    [ 'name' => 'contrast-3', 'slug' => 'contrast-3', 'color' => '#101014' ],
+                    [ 'name' => 'base',       'slug' => 'base',       'color' => 'rgba(252,215,3,0.11)' ],
+                    [ 'name' => 'base-2',     'slug' => 'base-2',     'color' => '#FFFBE8' ],
+                    [ 'name' => 'base-3',     'slug' => 'base-3',     'color' => '#ffffff' ],
+                    [ 'name' => 'accent',     'slug' => 'accent',     'color' => '#FCD602' ],
+                    [ 'name' => 'accent-2',   'slug' => 'accent-2',   'color' => '#EDF5DA' ],
+                    [ 'name' => 'accent-3',   'slug' => 'accent-3',   'color' => '#fcd602' ],
+                ],
+
+                // Colors
+                'background_color'                  => 'var(--base-3)',
+                'header_background_color'           => 'var(--base-3)',
+                'content_background_color'          => 'var(--base-3)',
+                'content_text_color'                => 'var(--contrast)',
+                'content_title_color'               => 'var(--contrast)',
+
+                'link_color'                        => 'var(--contrast)',
+                'link_color_hover'                  => 'var(--contrast-3)',
+                'content_link_color'                => 'var(--accent)',
+                'content_link_hover_color'          => 'var(--accent-3)',
+
+                'navigation_text_color'             => 'var(--contrast)',
+                'navigation_text_hover_color'       => 'var(--accent-3)',
+                'navigation_text_current_color'     => 'var(--contrast)',
+
+                'subnavigation_background_color'            => 'var(--base-2)',
+                'subnavigation_background_hover_color'      => 'var(--accent-3)',
+                'subnavigation_background_current_color'    => 'var(--accent-3)',
+                'subnavigation_text_color'                  => 'var(--contrast)',
+                'subnavigation_text_hover_color'            => 'var(--contrast)',
+                'subnavigation_text_current_color'          => 'var(--contrast)',
+
+                'slideout_background_color'          => 'var(--base-2)',
+                'slideout_background_hover_color'    => 'var(--base-2)',
+                'slideout_background_current_color'  => 'var(--base-2)',
+                'slideout_text_color'                => 'var(--contrast)',
+                'slideout_text_hover_color'          => 'var(--accent-3)',
+                'slideout_text_current_color'        => 'var(--accent)',
+
+                'slideout_submenu_background_color'         => 'var(--base-2)',
+                'slideout_submenu_background_hover_color'   => 'var(--base-2)',
+                'slideout_submenu_background_current_color' => 'var(--base-2)',
+                'slideout_submenu_text_color'               => 'var(--accent)',
+                'slideout_submenu_text_hover_color'         => 'var(--accent-3)',
+                'slideout_submenu_text_current_color'       => 'var(--accent)',
+
+                'search_modal_bg_color'              => 'var(--base-2)',
+
+                // Buttons
+                'form_button_background_color'       => 'var(--accent)',
+                'form_button_background_color_hover' => '#E8C400',
+                'form_button_text_color'             => 'var(--base-3)',
+                'form_button_text_color_hover'       => 'var(--base-3)',
+
+                // Headings
+                'h1_color' => 'var(--contrast)',
+                'h2_color' => 'var(--contrast)',
+                'h3_color' => 'var(--contrast)',
+                'h4_color' => 'var(--contrast)',
+                'h5_color' => 'var(--contrast)',
+                'h6_color' => 'var(--contrast)',
+
+                // Typography
+                'typography' => [
+                    [
+                        'selector' => 'body',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--inter)',
+                        'fontWeight' => '',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => '1.125rem',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => '1.5em',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '1.5em',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'base',
+                    ],
+                    [
+                        'selector' => 'primary-menu-items',
+                        'customSelector' => '',
+                        'fontFamily' => 'inherit',
+                        'fontWeight' => '600',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => '1rem',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => '1.5em',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '',
+                        'marginBottomTablet' => '',
+                        'marginBottomMobile' => '',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'primaryNavigation',
+                    ],
+                    [
+                        'selector' => 'primary-menu-toggle',
+                        'customSelector' => '',
+                        'fontFamily' => 'inherit',
+                        'fontWeight' => '',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => '1.5rem',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => '',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '',
+                        'marginBottomTablet' => '',
+                        'marginBottomMobile' => '',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'primaryNavigation',
+                    ],
+                    [
+                        'selector' => 'h1',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--barlow)',
+                        'fontWeight' => '800',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => 'clamp(2.375rem, 2.315vw + 1.264rem, 3rem)',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => 'calc(3px + 2ex)',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '2rem',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'content',
+                    ],
+                    [
+                        'selector' => 'h2',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--barlow)',
+                        'fontWeight' => '800',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => 'clamp(1.75rem, 1.389vw + 1.083rem, 2.125rem)',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => 'calc(5px + 2ex)',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '2rem',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'content',
+                    ],
+                    [
+                        'selector' => 'h3',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--barlow)',
+                        'fontWeight' => '800',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => 'clamp(1.313rem, 1.157vw + 0.757rem, 1.625rem)',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => 'calc(5px + 2ex)',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '2rem',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'content',
+                    ],
+                    [
+                        'selector' => 'h4',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--barlow)',
+                        'fontWeight' => '800',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => 'clamp(1.25rem, 0.926vw + 0.806rem, 1.5rem)',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => 'calc(6px + 2ex)',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '2rem',
+                        'module' => 'core',
+                        'group' => 'content',
+                    ],
+                    [
+                        'selector' => 'primary-sub-menu-items',
+                        'customSelector' => '',
+                        'fontFamily' => 'inherit',
+                        'fontWeight' => '600',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => '1rem',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'lineHeight' => '1.5em',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'marginBottom' => '',
+                        'marginBottomTablet' => '',
+                        'marginBottomMobile' => '',
+                        'marginBottomUnit' => '',
+                        'module' => 'core',
+                        'group' => 'primaryNavigation',
+                    ],
+                    [
+                        'selector' => 'h5',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--barlow)',
+                        'fontWeight' => '700',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => '1.1875rem',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => 'calc(6px + 2ex)',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '2rem',
+                        'module' => 'core',
+                        'group' => 'content',
+                    ],
+                    [
+                        'selector' => 'h6',
+                        'customSelector' => '',
+                        'fontFamily' => 'var(--gp-font--barlow)',
+                        'fontWeight' => '700',
+                        'textTransform' => '',
+                        'textDecoration' => '',
+                        'fontStyle' => '',
+                        'fontSize' => '1.125rem',
+                        'fontSizeTablet' => '',
+                        'fontSizeMobile' => '',
+                        'fontSizeUnit' => '',
+                        'lineHeight' => 'calc(6px + 2ex)',
+                        'lineHeightTablet' => '',
+                        'lineHeightMobile' => '',
+                        'lineHeightUnit' => '',
+                        'letterSpacing' => '',
+                        'letterSpacingTablet' => '',
+                        'letterSpacingMobile' => '',
+                        'letterSpacingUnit' => '',
+                        'marginBottom' => '2rem',
+                        'module' => 'core',
+                        'group' => 'content',
+                    ],
+                ],
+
+                // Layout defaults
+                'layout_setting'         => 'no-sidebar',
+                'single_layout_setting'  => 'no-sidebar',
+                'blog_layout_setting'    => 'no-sidebar',
+                'content_layout_setting' => 'separate-containers',
+                'container_width'        => 1200,
+                'container_alignment'    => 'boxes',
+
+                // UX defaults
+                'underline_links'  => 'never',
+                'smooth_scroll'    => true,
+                'nav_search_modal' => true,
+
+                // Misc safe brand-affecting toggles
+                'css_print_method'      => 'file',
+                'dynamic_css_cache'     => false,
+                'nav_alignment_setting' => 'left',
+                'logo_width'            => 250,
+
+                // Intentional exclusions for now:
+                // - 'retina_logo' (environment-specific URL)
+                // - menu/widget theme_mods
+                // - 'hide_title'/'hide_tagline' might be content/presentation policy; add later if desired
+            ],
         ],
         'theme_mods' => [
-            // 'custom_logo' => 123,
+            // Keep empty for now; your export includes mostly menus/widgets.
+            // We'll add logo here later (prefer attachment ID over URL).
         ],
     ];
 }
@@ -300,6 +642,16 @@ function acasa_render_branding_tools_page(): void {
 
     $seed_version = intval(get_option('acasa_branding_seed_version', 0));
     $snap_at      = get_option('acasa_branding_snapshot_at', '');
+    $export_data  = [
+        'generate_settings' => get_option('generate_settings', null),
+        'theme_mods'        => get_theme_mods(),
+    ];
+    $export_json = wp_json_encode($export_data, JSON_PRETTY_PRINT);
+    if (!is_string($export_json)) {
+        $export_json = '{}';
+    }
+    // Keep JSON readable in <textarea> while preventing accidental tag breakout.
+    $export_json = str_replace('</textarea', '<\/textarea', $export_json);
 
     echo '<div class="wrap">';
     echo '<h1>ACASA Branding</h1>';
@@ -379,6 +731,13 @@ function acasa_render_branding_tools_page(): void {
     }
 
     echo '</tbody></table>';
+
+    echo '<hr>';
+    echo '<h2>Export current settings (read-only)</h2>';
+    echo '<p>Copy the JSON below for auditing or migration purposes.</p>';
+    echo '<textarea readonly rows="24" style="width:100%;max-width:1200px;font-family:monospace;">';
+    echo $export_json;
+    echo '</textarea>';
 
     echo '<p style="margin-top:12px"><em>Note:</em> After applying branding on a cached site, you may need to purge page/CSS caches (Autoptimize, Cloudflare, server cache) to see changes immediately.</p>';
 
