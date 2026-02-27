@@ -38,26 +38,97 @@ add_action('wp_enqueue_scripts', function () {
 add_filter('generate_menu_bar_items', '__return_empty_string');
 
 /**
+ * Detect which top-level utility items exist in the primary menu.
+ * This lets the collapsed action row mirror the actual main menu.
+ */
+function acasa_primary_menu_item_presence(): array {
+    $presence = [
+        'contact' => false,
+        'account' => false,
+        'donate' => false,
+    ];
+
+    $locations = get_nav_menu_locations();
+    if (!is_array($locations) || !isset($locations['primary']) || !$locations['primary']) {
+        return $presence;
+    }
+
+    $menu_items = wp_get_nav_menu_items((int) $locations['primary']);
+    if (!is_array($menu_items)) {
+        return $presence;
+    }
+
+    foreach ($menu_items as $item) {
+        if (!is_object($item) || !isset($item->menu_item_parent) || (int) $item->menu_item_parent !== 0) {
+            continue;
+        }
+
+        $title = isset($item->title) ? (string) $item->title : '';
+        $url = isset($item->url) ? (string) $item->url : '';
+        $normalized_title = function_exists('remove_accents') ? strtolower(remove_accents($title)) : strtolower($title);
+
+        if (
+            strpos($normalized_title, 'contact') !== false
+            || strpos($url, '/contact') !== false
+        ) {
+            $presence['contact'] = true;
+        }
+
+        if (
+            strpos($url, '/panoul-de-control-al-donatorilor') !== false
+            || strpos($url, '/contul-meu') !== false
+            || strpos($normalized_title, 'contul meu') !== false
+        ) {
+            $presence['account'] = true;
+        }
+
+        if (
+            strpos($url, '/donatii-online') !== false
+            || strpos($normalized_title, 'doneaz') !== false
+        ) {
+            $presence['donate'] = true;
+        }
+    }
+
+    return $presence;
+}
+
+/**
  * Add quick-action icon buttons in mobile header controls.
  * Order in row: Donate, My Account, native GP menu toggle.
  */
 add_action('generate_inside_mobile_menu_control_wrapper', function (): void {
-    $donate_url = home_url('/donatii-online/');
+    $presence = acasa_primary_menu_item_presence();
+    $contact_url = home_url('/contact/');
     $account_url = home_url('/panoul-de-control-al-donatorilor/');
+    $donate_url = home_url('/donatii-online/');
 
-    echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--donate" href="' . esc_url($donate_url) . '" aria-label="' . esc_attr__('Doneaza', 'acasa-child') . '">';
-    echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
-    echo '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><polygon fill="currentColor" points="426.2 243 312 243 359.1 290 473.4 290 426.2 243"/><polygon fill="currentColor" points="85.8 243 38.6 290 152.8 290 200 243 85.8 243"/><path fill="currentColor" d="M349.6 336.2c-6.1 0-12-2.4-16.3-6.7l-54.2-53.9v204.1h133.5v-143.4h-63.1z"/><path fill="currentColor" d="M178.7 329.5c-4.3 4.3-10.2 6.7-16.3 6.7h-63.1v143.4h133.5v-204.1l-54.2 54z"/><path fill="currentColor" d="M303.1 32.4c-17.8 0-35.6 8.4-47.1 22-11.5-13.6-29.3-22-47.1-22-32.4 0-57.6 25.1-57.6 57.6s35.6 72.3 90 120.4l14.7 12.7 14.7-12.7c54.4-48.1 90-80.6 90-120.4 0-32.4-25.1-57.6-57.5-57.6z"/><line x1="157.3" y1="247.8" x2="232.9" y2="247.8" stroke="currentColor" stroke-miterlimit="10" stroke-width="10"/><line x1="278.7" y1="247.8" x2="354.3" y2="247.8" stroke="currentColor" stroke-miterlimit="10" stroke-width="10"/></svg>';
-    echo '</span>';
-    echo '<span class="screen-reader-text">' . esc_html__('Doneaza', 'acasa-child') . '</span>';
-    echo '</a>';
+    if ($presence['contact']) {
+        echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--contact" href="' . esc_url($contact_url) . '" aria-label="' . esc_attr__('Contact', 'acasa-child') . '">';
+        echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
+        echo '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M13.601 2.326A7.85 7.85 0 0 0 8.017 0C3.676 0 .14 3.534.14 7.873a7.84 7.84 0 0 0 1.066 3.93L0 16l4.307-1.127a7.9 7.9 0 0 0 3.71.945h.003c4.34 0 7.878-3.534 7.878-7.873a7.85 7.85 0 0 0-2.297-5.619zM8.02 14.49h-.002a6.57 6.57 0 0 1-3.35-.92l-.24-.142-2.554.668.682-2.49-.156-.255a6.55 6.55 0 0 1-1.004-3.478c0-3.627 2.96-6.58 6.6-6.58 1.762 0 3.415.684 4.659 1.926a6.54 6.54 0 0 1 1.93 4.656c-.001 3.628-2.962 6.58-6.595 6.58z"/><path fill="currentColor" d="M11.596 9.536c-.199-.1-1.173-.578-1.355-.645-.181-.067-.313-.1-.446.1-.133.2-.512.645-.628.779-.116.133-.232.15-.43.05-.199-.099-.84-.309-1.6-.985-.592-.527-.992-1.178-1.108-1.377-.116-.2-.012-.307.087-.406.09-.09.199-.232.298-.348.1-.116.133-.2.2-.332.066-.133.033-.25-.017-.349-.05-.1-.446-1.073-.611-1.47-.161-.387-.325-.334-.446-.34-.116-.005-.249-.006-.382-.006s-.349.05-.53.249c-.182.2-.695.679-.695 1.654 0 .978.712 1.922.811 2.055.1.133 1.394 2.128 3.38 2.983.472.203.84.324 1.127.415.473.151.904.13 1.244.079.38-.056 1.173-.479 1.339-.941.166-.464.166-.861.116-.944-.049-.083-.181-.133-.38-.232z"/></svg>';
+        echo '</span>';
+        echo '<span class="screen-reader-text">' . esc_html__('Contact', 'acasa-child') . '</span>';
+        echo '</a>';
+    }
 
-    echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--account" href="' . esc_url($account_url) . '" aria-label="' . esc_attr__('Contul meu', 'acasa-child') . '">';
-    echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
-    echo '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
-    echo '</span>';
-    echo '<span class="screen-reader-text">' . esc_html__('Contul meu', 'acasa-child') . '</span>';
-    echo '</a>';
+    if ($presence['account']) {
+        echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--account" href="' . esc_url($account_url) . '" aria-label="' . esc_attr__('Contul meu', 'acasa-child') . '">';
+        echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
+        echo '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
+        echo '</span>';
+        echo '<span class="screen-reader-text">' . esc_html__('Contul meu', 'acasa-child') . '</span>';
+        echo '</a>';
+    }
+
+    if ($presence['donate']) {
+        echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--donate" href="' . esc_url($donate_url) . '" aria-label="' . esc_attr__('Doneaza', 'acasa-child') . '">';
+        echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
+        echo '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><polygon fill="currentColor" points="426.2 243 312 243 359.1 290 473.4 290 426.2 243"/><polygon fill="currentColor" points="85.8 243 38.6 290 152.8 290 200 243 85.8 243"/><path fill="currentColor" d="M349.6 336.2c-6.1 0-12-2.4-16.3-6.7l-54.2-53.9v204.1h133.5v-143.4h-63.1z"/><path fill="currentColor" d="M178.7 329.5c-4.3 4.3-10.2 6.7-16.3 6.7h-63.1v143.4h133.5v-204.1l-54.2 54z"/><path fill="currentColor" d="M303.1 32.4c-17.8 0-35.6 8.4-47.1 22-11.5-13.6-29.3-22-47.1-22-32.4 0-57.6 25.1-57.6 57.6s35.6 72.3 90 120.4l14.7 12.7 14.7-12.7c54.4-48.1 90-80.6 90-120.4 0-32.4-25.1-57.6-57.5-57.6z"/><line x1="157.3" y1="247.8" x2="232.9" y2="247.8" stroke="currentColor" stroke-miterlimit="10" stroke-width="10"/><line x1="278.7" y1="247.8" x2="354.3" y2="247.8" stroke="currentColor" stroke-miterlimit="10" stroke-width="10"/></svg>';
+        echo '</span>';
+        echo '<span class="screen-reader-text">' . esc_html__('Doneaza', 'acasa-child') . '</span>';
+        echo '</a>';
+    }
 }, 5);
 
 /**
@@ -67,6 +138,8 @@ add_action('generate_inside_mobile_menu_control_wrapper', function (): void {
  * CHANGE NOTE:
  * - Class added: "acasa-menu-item-donate"
  * - Selector target in CSS: ".main-nav > ul > li.acasa-menu-item-donate > a"
+ * - Tools class contract: "acasa-menu-item-tool" (+ variant class like
+ *   acasa-menu-item-contact / acasa-menu-item-account or custom acasa-tool-*).
  * - Match strategy: donate URL (/donatii-online) OR title containing "doneaz".
  */
 add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $depth): array {
@@ -83,13 +156,107 @@ add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $de
     $normalized_title = function_exists('remove_accents') ? strtolower(remove_accents($title)) : strtolower($title);
 
     $is_donate = (strpos($url, '/donatii-online') !== false || strpos($normalized_title, 'doneaz') !== false);
+    $is_contact = (strpos($normalized_title, 'contact') !== false || strpos($url, '/contact') !== false);
+    $is_account = (
+        strpos($url, '/panoul-de-control-al-donatorilor') !== false
+        || strpos($url, '/contul-meu') !== false
+        || strpos($normalized_title, 'contul meu') !== false
+    );
+    $has_custom_tool_class = false;
+    foreach ($classes as $class_name) {
+        if (is_string($class_name) && strpos($class_name, 'acasa-tool-') === 0) {
+            $has_custom_tool_class = true;
+            break;
+        }
+    }
 
     if ($is_donate && !in_array('acasa-menu-item-donate', $classes, true)) {
         $classes[] = 'acasa-menu-item-donate';
     }
 
+    if (($is_contact || $is_account || $has_custom_tool_class) && !in_array('acasa-menu-item-tool', $classes, true)) {
+        $classes[] = 'acasa-menu-item-tool';
+    }
+
+    if (($is_contact || $is_account || $has_custom_tool_class) && !in_array('acasa-menu-item-icon', $classes, true)) {
+        $classes[] = 'acasa-menu-item-icon';
+    }
+
+    if ($is_contact && !in_array('acasa-menu-item-contact', $classes, true)) {
+        $classes[] = 'acasa-menu-item-contact';
+    }
+
+    if ($is_account && !in_array('acasa-menu-item-account', $classes, true)) {
+        $classes[] = 'acasa-menu-item-account';
+    }
+
     return $classes;
 }, 10, 4);
+
+/**
+ * Anchor the two-zone desktop header layout.
+ * - If tools exist, first tool gets the "right zone starts here" class.
+ * - Otherwise donate becomes the anchor so it stays right aligned.
+ */
+add_filter('wp_nav_menu_objects', function (array $items, $args): array {
+    if (!is_object($args) || !isset($args->theme_location) || $args->theme_location !== 'primary') {
+        return $items;
+    }
+
+    $tool_index = null;
+    $donate_index = null;
+
+    foreach ($items as $index => $item) {
+        if (!is_object($item) || !isset($item->menu_item_parent) || (int) $item->menu_item_parent !== 0) {
+            continue;
+        }
+
+        $classes = isset($item->classes) && is_array($item->classes) ? $item->classes : [];
+        $title = isset($item->title) ? (string) $item->title : '';
+        $url = isset($item->url) ? (string) $item->url : '';
+        $normalized_title = function_exists('remove_accents') ? strtolower(remove_accents($title)) : strtolower($title);
+
+        $has_custom_tool_class = false;
+        foreach ($classes as $class_name) {
+            if (is_string($class_name) && strpos($class_name, 'acasa-tool-') === 0) {
+                $has_custom_tool_class = true;
+                break;
+            }
+        }
+
+        $is_tool = in_array('acasa-menu-item-tool', $classes, true)
+            || strpos($normalized_title, 'contact') !== false
+            || strpos($url, '/contact') !== false
+            || strpos($url, '/panoul-de-control-al-donatorilor') !== false
+            || strpos($url, '/contul-meu') !== false
+            || strpos($normalized_title, 'contul meu') !== false
+            || $has_custom_tool_class;
+
+        $is_donate = in_array('acasa-menu-item-donate', $classes, true)
+            || strpos($url, '/donatii-online') !== false
+            || strpos($normalized_title, 'doneaz') !== false;
+
+        if ($tool_index === null && $is_tool) {
+            $tool_index = $index;
+        }
+        if ($donate_index === null && $is_donate) {
+            $donate_index = $index;
+        }
+    }
+
+    $anchor_index = $tool_index !== null ? $tool_index : $donate_index;
+    if ($anchor_index !== null && isset($items[$anchor_index]) && is_object($items[$anchor_index])) {
+        $classes = isset($items[$anchor_index]->classes) && is_array($items[$anchor_index]->classes)
+            ? $items[$anchor_index]->classes
+            : [];
+        if (!in_array('acasa-menu-item-right-anchor', $classes, true)) {
+            $classes[] = 'acasa-menu-item-right-anchor';
+            $items[$anchor_index]->classes = $classes;
+        }
+    }
+
+    return $items;
+}, 30, 2);
 
 /**
  * Ensure donate exists as the final top-level primary nav item.
