@@ -1,0 +1,300 @@
+/*
+ * ACASA header lock-in (GP-first, minimal overrides)
+ * --------------------------------------------------------------------------
+ * CHANGE NOTE:
+ * - Implements approved header simulation in live GP markup.
+ * - Keeps GP structure (logo + #site-navigation) and skins it minimally.
+ * - Donate CTA is styled as an inline menu item via class:
+ *   ".acasa-menu-item-donate" (added in functions.php filters).
+ * - Top-level menu keeps straight yellow underline; submenu hover is
+ *   background-only (no underline).
+ */
+:root {
+    --acasa-yellow: #FCD602;
+    --acasa-ink: #101014;
+    --acasa-stripe: repeating-linear-gradient(-45deg, #101014 0px, #101014 6px, #FCD602 6px, #FCD602 12px);
+}
+
+/* Top yellow line at the start of the page body (design lock-in) */
+body::before {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 6px;
+    background: var(--acasa-yellow);
+}
+
+/*
+ * Remove older hook-rendered CTA block in nav (legacy GB element output).
+ * We now use one donate item in the primary menu.
+ */
+.site-header #site-navigation .inside-navigation > [class^="gb-element-"] {
+    display: none;
+}
+
+/* Hide GP menu-bar utility items in header area to reduce clutter. */
+.site-header .mobile-menu-control-wrapper .menu-bar-items,
+.site-header #site-navigation .menu-bar-items {
+    display: none !important;
+}
+
+/* Desktop header structure: logo | nav (donate lives in nav item list). */
+.site-header.has-inline-mobile-toggle .inside-header {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 20px;
+}
+
+.site-header .site-logo img,
+.site-header .site-logo .header-image {
+    width: auto;
+    height: 41px;
+    max-height: 41px;
+}
+
+.site-header #site-navigation {
+    justify-self: center;
+    width: auto;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 10px 28px rgba(16, 16, 20, 0.06);
+}
+
+.site-header #site-navigation .inside-navigation {
+    min-height: 74px;
+    padding: 0 8px;
+}
+
+@media (min-width: 1081px) {
+    .site-header #site-navigation .main-nav > ul {
+        display: flex;
+        align-items: stretch;
+        flex-wrap: nowrap;
+    }
+
+    .site-header #site-navigation .main-nav > ul > li {
+        display: flex;
+        align-items: stretch;
+        position: relative;
+        flex: 0 0 auto;
+    }
+
+    .site-header #site-navigation .main-nav > ul > li > a {
+        display: inline-flex;
+        align-items: center;
+        height: 100%;
+        padding: 1.1rem 1.3rem;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--acasa-ink);
+        background: transparent;
+        transition: box-shadow 0.15s ease;
+    }
+}
+
+/* Keep straight underline behavior for top-level items only (7.2 behavior). */
+.site-header #site-navigation .main-nav > ul > li:not(.acasa-menu-item-donate):hover > a,
+.site-header #site-navigation .main-nav > ul > li:not(.acasa-menu-item-donate):focus-within > a,
+.site-header #site-navigation .main-nav > ul > li:not(.acasa-menu-item-donate)[class*="current-menu-"] > a {
+    color: var(--acasa-ink);
+    background: transparent;
+    box-shadow: inset 0 -0.28em 0 0 var(--acasa-yellow);
+}
+
+/* Submenus: no underline, only background color on hover/focus. */
+.site-header #site-navigation .main-nav ul ul {
+    top: 100%;
+    left: 0;
+    border: 1px solid rgba(16, 16, 20, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 16px 34px rgba(16, 16, 20, 0.14);
+    padding: 8px;
+    background: #fff;
+}
+
+.site-header #site-navigation .main-nav ul ul li a {
+    padding: 12px;
+    border-radius: 9px;
+    color: var(--acasa-ink);
+    background: transparent;
+    box-shadow: none;
+}
+
+.site-header #site-navigation .main-nav ul ul li:hover > a,
+.site-header #site-navigation .main-nav ul ul li:focus-within > a,
+.site-header #site-navigation .main-nav ul ul li[class*="current-menu-"] > a {
+    background: #FFFBE8;
+    color: var(--acasa-ink);
+    box-shadow: none;
+}
+
+/*
+ * Donate CTA as final top-level menu item.
+ * Class source: functions.php -> nav_menu_css_class filter.
+ */
+.site-header #site-navigation .main-nav > ul > li.acasa-menu-item-donate {
+    align-items: center;
+    padding: 0 10px 0 8px;
+    flex: 0 0 auto;
+}
+
+.site-header #site-navigation .main-nav > ul > li.acasa-menu-item-donate > a {
+    text-decoration: none;
+    background: var(--acasa-yellow);
+    color: var(--acasa-ink);
+    border-radius: 8px;
+    border-bottom: 5px solid transparent;
+    border-image: var(--acasa-stripe) 5;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    line-height: 1;
+    padding: 13px 22px;
+    white-space: nowrap;
+    height: auto;
+    box-shadow: none !important;
+    transition: filter 0.16s ease, transform 0.12s ease;
+}
+
+.site-header #site-navigation .main-nav > ul > li.acasa-menu-item-donate > a:hover {
+    filter: brightness(1.06);
+    transform: translateY(-2px);
+}
+
+.site-header #site-navigation .main-nav > ul > li.acasa-menu-item-donate > a:active {
+    filter: brightness(0.95);
+    transform: translateY(0);
+}
+
+/*
+ * Tablet/mobile behavior:
+ * - Header keeps GP inline-mobile layout.
+ * - Menu spans full width.
+ * - Donate stays inline as menu item with compact dimensions.
+ */
+@media (max-width: 1080px) {
+    .site-header.has-inline-mobile-toggle .inside-header {
+        grid-template-columns: auto 1fr;
+        row-gap: 12px;
+    }
+
+    .site-header #site-navigation {
+        grid-column: 1 / -1;
+        justify-self: stretch;
+        width: 100%;
+        overflow: visible;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        border-radius: 0;
+    }
+
+    .site-header #site-navigation .inside-navigation {
+        min-height: 0;
+        padding: 0;
+    }
+
+    .site-header .mobile-menu-control-wrapper {
+        justify-self: end;
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: nowrap;
+    }
+
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link,
+    .site-header .mobile-menu-control-wrapper .menu-toggle,
+    .site-header .mobile-menu-control-wrapper .menu-toggle:hover,
+    .site-header .mobile-menu-control-wrapper .menu-toggle:focus {
+        width: 46px;
+        height: 46px;
+        min-width: 46px;
+        min-height: 46px;
+        background: #fff;
+        color: var(--acasa-ink);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 12px;
+        box-shadow: 0 10px 28px rgba(16, 16, 20, 0.06);
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+        text-decoration: none;
+    }
+
+    .site-header .mobile-menu-control-wrapper .menu-toggle .mobile-menu {
+        display: none;
+    }
+
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link__icon,
+    .site-header .mobile-menu-control-wrapper .menu-toggle .gp-icon,
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link svg,
+    .site-header .mobile-menu-control-wrapper .menu-toggle .gp-icon svg {
+        color: var(--acasa-ink);
+        fill: currentColor;
+        width: 20px;
+        height: 20px;
+    }
+
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link svg {
+        display: block;
+    }
+
+    .site-header .mobile-menu-control-wrapper .menu-toggle .gp-icon svg + svg {
+        display: none;
+    }
+
+    .site-header .mobile-menu-control-wrapper.toggled .menu-toggle .gp-icon svg:first-child {
+        display: none;
+    }
+
+    .site-header .mobile-menu-control-wrapper.toggled .menu-toggle .gp-icon svg + svg {
+        display: block;
+    }
+
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link:hover,
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link:focus-visible,
+    .site-header .mobile-menu-control-wrapper .menu-toggle:hover,
+    .site-header .mobile-menu-control-wrapper .menu-toggle:focus-visible {
+        background: var(--base-2, #FFFBE8);
+        transform: translateY(-1px);
+    }
+
+    .site-header .mobile-menu-control-wrapper .acasa-mobile-quick-link:focus-visible,
+    .site-header .mobile-menu-control-wrapper .menu-toggle:focus-visible {
+        outline: 3px solid var(--acasa-yellow);
+        outline-offset: 2px;
+    }
+
+    /*
+     * At GP mobile breakpoint, keep native toggle behavior:
+     * - full menu hidden until toggled
+     * - hamburger controls open/close
+     */
+    .site-header #site-navigation .main-nav > ul > li > a {
+        padding: 1rem;
+        font-size: 0.96rem;
+        letter-spacing: 0.015em;
+    }
+
+    .site-header #site-navigation .main-nav > ul > li.acasa-menu-item-donate {
+        padding: 0 8px;
+    }
+
+    .site-header #site-navigation .main-nav > ul > li.acasa-menu-item-donate > a {
+        padding: 11px 14px;
+        font-size: 12px;
+        letter-spacing: 0.1em;
+    }
+
+    .site-header #site-navigation .main-nav ul ul {
+        z-index: 60;
+    }
+}

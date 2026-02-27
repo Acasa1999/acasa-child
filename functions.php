@@ -12,7 +12,109 @@ add_action('wp_enqueue_scripts', function () {
         [],
         wp_get_theme()->get('Version')
     );
+
+    /*
+     * Header/navigation skin for the locked ACASA top-bar design.
+     * CHANGE NOTE:
+     * - Added for "yellow line + logo + floating nav box + inline donate menu item" look.
+     * - Keep this CSS separate from style.css so header iteration stays isolated.
+     */
+    wp_enqueue_style(
+        'acasa-header-v1',
+        get_stylesheet_directory_uri() . '/header-v1.css',
+        [ 'acasa-child-style' ],
+        wp_get_theme()->get('Version')
+    );
 }, 20);
+
+/**
+ * Remove default menu-bar items (search icon etc.) in the main header nav.
+ * The locked header design uses a dedicated donate CTA on the right.
+ *
+ * CHANGE NOTE:
+ * - We hide GP menu-bar utility output to keep header visually clean.
+ * - Donate is no longer injected via header hook; it lives in the primary menu.
+ */
+add_filter('generate_menu_bar_items', '__return_empty_string');
+
+/**
+ * Add quick-action icon buttons in mobile header controls.
+ * Order in row: Donate, My Account, native GP menu toggle.
+ */
+add_action('generate_inside_mobile_menu_control_wrapper', function (): void {
+    $donate_url = home_url('/donatii-online/');
+    $account_url = home_url('/panoul-de-control-al-donatorilor/');
+
+    echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--donate" href="' . esc_url($donate_url) . '" aria-label="' . esc_attr__('Doneaza', 'acasa-child') . '">';
+    echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
+    echo '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><polygon fill="currentColor" points="426.2 243 312 243 359.1 290 473.4 290 426.2 243"/><polygon fill="currentColor" points="85.8 243 38.6 290 152.8 290 200 243 85.8 243"/><path fill="currentColor" d="M349.6 336.2c-6.1 0-12-2.4-16.3-6.7l-54.2-53.9v204.1h133.5v-143.4h-63.1z"/><path fill="currentColor" d="M178.7 329.5c-4.3 4.3-10.2 6.7-16.3 6.7h-63.1v143.4h133.5v-204.1l-54.2 54z"/><path fill="currentColor" d="M303.1 32.4c-17.8 0-35.6 8.4-47.1 22-11.5-13.6-29.3-22-47.1-22-32.4 0-57.6 25.1-57.6 57.6s35.6 72.3 90 120.4l14.7 12.7 14.7-12.7c54.4-48.1 90-80.6 90-120.4 0-32.4-25.1-57.6-57.5-57.6z"/><line x1="157.3" y1="247.8" x2="232.9" y2="247.8" stroke="currentColor" stroke-miterlimit="10" stroke-width="10"/><line x1="278.7" y1="247.8" x2="354.3" y2="247.8" stroke="currentColor" stroke-miterlimit="10" stroke-width="10"/></svg>';
+    echo '</span>';
+    echo '<span class="screen-reader-text">' . esc_html__('Doneaza', 'acasa-child') . '</span>';
+    echo '</a>';
+
+    echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--account" href="' . esc_url($account_url) . '" aria-label="' . esc_attr__('Contul meu', 'acasa-child') . '">';
+    echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
+    echo '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
+    echo '</span>';
+    echo '<span class="screen-reader-text">' . esc_html__('Contul meu', 'acasa-child') . '</span>';
+    echo '</a>';
+}, 5);
+
+/**
+ * Add donate styling class to matching primary menu item.
+ * This keeps donate styling robust across menu reorders.
+ *
+ * CHANGE NOTE:
+ * - Class added: "acasa-menu-item-donate"
+ * - Selector target in CSS: ".main-nav > ul > li.acasa-menu-item-donate > a"
+ * - Match strategy: donate URL (/donatii-online) OR title containing "doneaz".
+ */
+add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $depth): array {
+    if (!is_object($args) || !isset($args->theme_location) || $args->theme_location !== 'primary') {
+        return $classes;
+    }
+
+    if ($depth !== 0 || !is_object($item)) {
+        return $classes;
+    }
+
+    $title = isset($item->title) ? (string) $item->title : '';
+    $url = isset($item->url) ? (string) $item->url : '';
+    $normalized_title = function_exists('remove_accents') ? strtolower(remove_accents($title)) : strtolower($title);
+
+    $is_donate = (strpos($url, '/donatii-online') !== false || strpos($normalized_title, 'doneaz') !== false);
+
+    if ($is_donate && !in_array('acasa-menu-item-donate', $classes, true)) {
+        $classes[] = 'acasa-menu-item-donate';
+    }
+
+    return $classes;
+}, 10, 4);
+
+/**
+ * Ensure donate exists as the final top-level primary nav item.
+ * If it's already present in menu data, this does nothing.
+ *
+ * CHANGE NOTE:
+ * - This is a safety fallback for branding/apply/reset workflows.
+ * - If menu editors remove donate accidentally, header layout still keeps CTA.
+ */
+add_filter('wp_nav_menu_items', function (string $items, $args): string {
+    if (!is_object($args) || !isset($args->theme_location) || $args->theme_location !== 'primary') {
+        return $items;
+    }
+
+    if (strpos($items, '/donatii-online/') !== false || strpos($items, '/donatii-online"') !== false) {
+        return $items;
+    }
+
+    $donate = sprintf(
+        '<li class="menu-item menu-item-type-custom menu-item-object-custom acasa-menu-item-donate"><a href="%s">Doneaza</a></li>',
+        esc_url(home_url('/donatii-online/'))
+    );
+
+    return $items . $donate;
+}, 20, 2);
 
 /* ============================================================================
    ACASA Branding Tool (Option B: DB seeder + snapshot + rollback)
