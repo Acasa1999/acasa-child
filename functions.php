@@ -392,6 +392,8 @@ function acasa_branding_target_map(): array {
                 'dynamic_css_cache'     => false,
                 'nav_alignment_setting' => 'left',
                 'logo_width'            => 250,
+				'hide_title'  => true,
+				'hide_tagline' => true,
 
                 // Intentional exclusions for now:
                 // - 'retina_logo' (environment-specific URL)
@@ -400,9 +402,8 @@ function acasa_branding_target_map(): array {
             ],
         ],
         'theme_mods' => [
-            // Keep empty for now; your export includes mostly menus/widgets.
-            // We'll add logo here later (prefer attachment ID over URL).
-        ],
+    'display_header_text' => false,
+],
     ];
 }
 
