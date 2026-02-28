@@ -242,3 +242,141 @@ function acasa_upgrade_email_access_to_wp_session() {
 
     remove_filter( 'auth_cookie_expiration', $expiry_filter );
 }
+
+/**
+ * Register Tools > Sync Donor Accounts admin page.
+ */
+add_action( 'admin_menu', function() {
+    add_management_page(
+        'Sync Donor Accounts',
+        'Sync Donor Accounts',
+        'manage_options',
+        'acasa-sync-donors',
+        'acasa_render_sync_donors_page'
+    );
+} );
+
+function acasa_render_sync_donors_page() {
+    ?>
+    <div class="wrap">
+        <h1>Sync Donor Accounts</h1>
+        <p>Creates WP user accounts (role: <code>give_donor</code>) for all donors with at least one
+        confirmed donation. Safe to run multiple times — existing accounts are skipped.</p>
+        <button id="acasa-sync-btn" class="button button-primary">Run Sync</button>
+        <span id="acasa-sync-status" style="margin-left:12px;"></span>
+        <div id="acasa-sync-results" style="margin-top:16px;font-family:monospace;white-space:pre;"></div>
+    </div>
+    <script>
+    document.getElementById('acasa-sync-btn').addEventListener('click', function() {
+        var btn = this;
+        btn.disabled = true;
+        document.getElementById('acasa-sync-status').textContent = 'Running\u2026';
+        document.getElementById('acasa-sync-results').textContent = '';
+
+        fetch(ajaxurl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=acasa_sync_donors&_wpnonce=<?php echo esc_js( wp_create_nonce( 'acasa_sync_donors' ) ); ?>'
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('acasa-sync-status').textContent = data.success ? 'Done.' : 'Error.';
+            document.getElementById('acasa-sync-results').textContent = data.data.message;
+            btn.disabled = false;
+        })
+        .catch(function() {
+            document.getElementById('acasa-sync-status').textContent = 'Request failed.';
+            btn.disabled = false;
+        });
+    });
+    </script>
+    <?php
+}
+
+/**
+ * AJAX handler for donor sync — runs the sync and returns JSON.
+ */
+add_action( 'wp_ajax_acasa_sync_donors', 'acasa_ajax_sync_donors' );
+
+function acasa_ajax_sync_donors() {
+    check_ajax_referer( 'acasa_sync_donors' );
+
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( [ 'message' => 'Unauthorized.' ] );
+    }
+
+    $results = acasa_run_donor_sync();
+
+    wp_send_json_success( [
+        'message' => sprintf(
+            "Created: %d\nRole added to existing user: %d\nSkipped (already correct): %d\nErrors: %d",
+            $results['created'],
+            $results['role_added'],
+            $results['skipped'],
+            $results['errors']
+        ),
+    ] );
+}
+
+/**
+ * Core sync logic. Idempotent — safe to run multiple times.
+ *
+ * Queries the give_donors custom table (GiveWP v3+ stores donor data there,
+ * not in wp_postmeta). Donors with purchase_count > 0 have at least one
+ * confirmed donation.
+ *
+ * @return array{created: int, role_added: int, skipped: int, errors: int}
+ */
+function acasa_run_donor_sync(): array {
+    $counts = [ 'created' => 0, 'role_added' => 0, 'skipped' => 0, 'errors' => 0 ];
+
+    // GiveWP v3+ stores all donor records in give_donors (not wp_postmeta).
+    // purchase_count > 0 means at least one confirmed donation exists.
+    global $wpdb;
+    $donors = $wpdb->get_results( "
+        SELECT id, email, name
+        FROM {$wpdb->prefix}give_donors
+        WHERE purchase_count > 0
+          AND email != ''
+    " );
+
+    foreach ( $donors as $donor ) {
+        $email = trim( $donor->email );
+
+        if ( ! is_email( $email ) ) {
+            $counts['errors']++;
+            continue;
+        }
+
+        $existing = get_user_by( 'email', $email );
+
+        if ( $existing ) {
+            if ( in_array( 'give_donor', (array) $existing->roles, true ) ) {
+                $counts['skipped']++;
+            } else {
+                $existing->add_role( 'give_donor' );
+                $counts['role_added']++;
+            }
+        } else {
+            // Split the full name from give_donors.name into first / last.
+            $full_name  = trim( $donor->name );
+            $space_pos  = strpos( $full_name, ' ' );
+            if ( $space_pos !== false ) {
+                $first_name = substr( $full_name, 0, $space_pos );
+                $last_name  = substr( $full_name, $space_pos + 1 );
+            } else {
+                $first_name = $full_name;
+                $last_name  = '';
+            }
+
+            $result = acasa_ensure_donor_wp_user( $email, $first_name, $last_name, (int) $donor->id );
+            if ( is_wp_error( $result ) ) {
+                $counts['errors']++;
+            } else {
+                $counts['created']++;
+            }
+        }
+    }
+
+    return $counts;
+}
