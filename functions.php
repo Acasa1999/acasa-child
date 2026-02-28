@@ -163,6 +163,118 @@ add_filter('generate_logo_output', function ($html) {
 add_filter('generate_menu_bar_items', '__return_empty_string');
 
 /**
+ * Resolve the term ID assigned to the primary menu location.
+ */
+function acasa_primary_menu_term_id(): int {
+    $locations = get_nav_menu_locations();
+    if (!is_array($locations) || !isset($locations['primary'])) {
+        return 0;
+    }
+
+    return (int) $locations['primary'];
+}
+
+/**
+ * Check whether a menu reference points to the primary menu.
+ *
+ * @param mixed $menu Menu arg as passed to wp_nav_menu().
+ */
+function acasa_menu_is_primary($menu): bool {
+    $primary_id = acasa_primary_menu_term_id();
+    if ($primary_id <= 0 || empty($menu)) {
+        return false;
+    }
+
+    if (is_numeric($menu)) {
+        return (int) $menu === $primary_id;
+    }
+
+    if (is_object($menu) && isset($menu->term_id)) {
+        return (int) $menu->term_id === $primary_id;
+    }
+
+    if (is_string($menu)) {
+        $menu_obj = wp_get_nav_menu_object($menu);
+        if ($menu_obj && isset($menu_obj->term_id)) {
+            return (int) $menu_obj->term_id === $primary_id;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Match classic and block-menu rendering contexts for the primary menu.
+ *
+ * @param mixed $args wp_nav_menu() args object.
+ */
+function acasa_is_primary_menu_render_context($args): bool {
+    if (!is_object($args)) {
+        return false;
+    }
+
+    if (isset($args->theme_location) && $args->theme_location === 'primary') {
+        return true;
+    }
+
+    return isset($args->menu) && acasa_menu_is_primary($args->menu);
+}
+
+/**
+ * Build a GenerateBlocks Navigation block payload for the primary menu.
+ */
+function acasa_primary_navigation_block_markup(int $menu_id): string {
+    if ($menu_id <= 0) {
+        return '';
+    }
+
+    return sprintf(
+        '<!-- wp:generateblocks-pro/navigation {"uniqueId":"navacasa01","subMenuType":"hover","tagName":"nav","htmlAttributes":{"data-gb-mobile-breakpoint":"1320px","aria-label":"Primary menu"}} -->'
+        . '<nav class="main-nav gb-navigation gb-navigation-navacasa01" data-gb-mobile-breakpoint="1320px" aria-label="Primary menu">'
+        . '<!-- wp:generateblocks-pro/classic-menu {"menu":"%1$d","uniqueId":"cmacasa01"} /-->'
+        . '</nav>'
+        . '<!-- /wp:generateblocks-pro/navigation -->',
+        $menu_id
+    );
+}
+
+/**
+ * Replace GP primary menu markup with a GenerateBlocks Navigation block render.
+ * This keeps the existing Primary menu data source while enabling block-based nav.
+ */
+add_filter('wp_nav_menu', function (string $nav_menu, $args): string {
+    if (
+        is_admin()
+        || !is_object($args)
+        || !isset($args->theme_location)
+        || $args->theme_location !== 'primary'
+    ) {
+        return $nav_menu;
+    }
+
+    static $is_rendering = false;
+    if ($is_rendering) {
+        return $nav_menu;
+    }
+
+    $primary_menu_id = acasa_primary_menu_term_id();
+    if ($primary_menu_id <= 0) {
+        return $nav_menu;
+    }
+
+    $block_markup = acasa_primary_navigation_block_markup($primary_menu_id);
+    if ($block_markup === '') {
+        return $nav_menu;
+    }
+
+    $is_rendering = true;
+    $rendered = do_blocks($block_markup);
+    $is_rendering = false;
+
+    return is_string($rendered) && trim($rendered) !== '' ? $rendered : $nav_menu;
+}, 20, 2);
+
+/**
  * Normalize menu item classes for semantic role matching.
  */
 function acasa_normalize_menu_classes($item): array {
@@ -337,7 +449,7 @@ add_action('admin_notices', function (): void {
  *   (isContact, isAccount, isDonate, isTool).
  */
 add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $depth): array {
-    if (!is_object($args) || !isset($args->theme_location) || $args->theme_location !== 'primary') {
+    if (!acasa_is_primary_menu_render_context($args)) {
         return $classes;
     }
 
@@ -372,7 +484,7 @@ add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $de
  * - Otherwise donate becomes the anchor so it stays right aligned.
  */
 add_filter('wp_nav_menu_objects', function (array $items, $args): array {
-    if (!is_object($args) || !isset($args->theme_location) || $args->theme_location !== 'primary') {
+    if (!acasa_is_primary_menu_render_context($args)) {
         return $items;
     }
 
@@ -417,7 +529,7 @@ add_filter('wp_nav_menu_objects', function (array $items, $args): array {
  * - If menu editors remove donate accidentally, header layout still keeps CTA.
  */
 add_filter('wp_nav_menu_items', function (string $items, $args): string {
-    if (!is_object($args) || !isset($args->theme_location) || $args->theme_location !== 'primary') {
+    if (!acasa_is_primary_menu_render_context($args)) {
         return $items;
     }
 
@@ -1322,3 +1434,5 @@ function acasa_render_branding_tools_page(): void {
 
     echo '</div>';
 }
+
+require get_stylesheet_directory() . '/inc/donor-access.php';
