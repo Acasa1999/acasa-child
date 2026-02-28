@@ -49,8 +49,9 @@ body::before {
 .site-header .site-logo img,
 .site-header .site-logo .header-image {
     width: auto;
-    height: 41px;
+    height: auto;
     max-height: 41px;
+    object-fit: contain;
 }
 
 .site-header #site-navigation {
@@ -279,6 +280,18 @@ body::before {
         row-gap: 12px;
     }
 
+    .site-header .site-logo {
+        min-width: 0;
+    }
+
+    .site-header .site-logo img,
+    .site-header .site-logo .header-image {
+        width: auto;
+        height: auto;
+        max-height: 41px;
+        max-width: clamp(140px, 34vw, 220px);
+    }
+
     .site-header #site-navigation {
         grid-column: 1 / -1;
         justify-self: stretch;
@@ -432,5 +445,42 @@ body::before {
 
     .site-header #site-navigation .main-nav ul ul {
         z-index: 60;
+    }
+}
+
+/* Last-resort compact layout:
+ * keep brand legible by moving action buttons under the logo.
+ */
+@media (max-width: 760px) {
+    .site-header.has-inline-mobile-toggle .inside-header {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        row-gap: 10px;
+    }
+
+    .site-header .site-logo,
+    .site-header .site-branding {
+        justify-self: center;
+        text-align: center;
+    }
+
+    .site-header .site-logo img,
+    .site-header .site-logo .header-image {
+        max-width: clamp(150px, 55vw, 210px);
+        max-height: 44px;
+    }
+
+    .site-header #site-navigation {
+        grid-column: 1;
+        justify-self: center;
+        width: auto;
+        max-width: 100%;
+    }
+
+    .site-header .mobile-menu-control-wrapper {
+        justify-self: center;
+        margin-left: 0;
+        justify-content: center;
+        width: auto;
     }
 }

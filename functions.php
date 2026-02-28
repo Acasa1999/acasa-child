@@ -28,6 +28,131 @@ add_action('wp_enqueue_scripts', function () {
 }, 20);
 
 /**
+ * Convert same-site absolute URL to root-relative URL.
+ * Keeps local/live-link environments resilient when host differs.
+ */
+function acasa_to_root_relative_url(string $url): string {
+    if ($url === '') {
+        return $url;
+    }
+
+    $path = wp_parse_url($url, PHP_URL_PATH);
+    $query = wp_parse_url($url, PHP_URL_QUERY);
+    $fragment = wp_parse_url($url, PHP_URL_FRAGMENT);
+
+    // For WordPress media/logo paths, force host-agnostic root-relative URLs.
+    // This avoids mixed-host/scheme breakage on Local Live Links (mobile 2x srcset).
+    if (is_string($path) && $path !== '' && strpos($path, '/wp-content/') === 0) {
+        if (is_string($query) && $query !== '') {
+            $path .= '?' . $query;
+        }
+        if (is_string($fragment) && $fragment !== '') {
+            $path .= '#' . $fragment;
+        }
+        return $path;
+    }
+
+    $site_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
+    $url_host = wp_parse_url($url, PHP_URL_HOST);
+
+    if (!is_string($site_host) || $site_host === '' || !is_string($url_host) || $url_host === '') {
+        return $url;
+    }
+
+    if (strcasecmp($site_host, $url_host) !== 0) {
+        return $url;
+    }
+
+    if (!is_string($path) || $path === '') {
+        $path = '/';
+    }
+
+    if (is_string($query) && $query !== '') {
+        $path .= '?' . $query;
+    }
+    if (is_string($fragment) && $fragment !== '') {
+        $path .= '#' . $fragment;
+    }
+
+    return $path;
+}
+
+/**
+ * Normalize srcset-like values by making same-site URLs root-relative.
+ */
+function acasa_normalize_srcset_value(string $value): string {
+    $parts = array_filter(array_map('trim', explode(',', $value)), static function ($part): bool {
+        return $part !== '';
+    });
+
+    $normalized = [];
+    foreach ($parts as $part) {
+        if (!preg_match('/^(\S+)(\s+.+)?$/', $part, $matches)) {
+            $normalized[] = $part;
+            continue;
+        }
+
+        $url = acasa_to_root_relative_url($matches[1]);
+        $descriptor = isset($matches[2]) ? $matches[2] : '';
+        $normalized[] = trim($url . $descriptor);
+    }
+
+    return implode(', ', $normalized);
+}
+
+/**
+ * Make GP logo image URLs host-agnostic for local live links/mobile previews.
+ * Applies to src/srcset and common lazy-load data attributes.
+ */
+add_filter('generate_logo_output', function ($html) {
+    if (!is_string($html) || $html === '') {
+        return $html;
+    }
+
+    $attrs = [
+        'src' => false,
+        'data-src' => false,
+        'srcset' => true,
+        'data-srcset' => true,
+    ];
+
+    foreach ($attrs as $attr => $is_srcset) {
+        $pattern = '/\b' . preg_quote($attr, '/') . '=(["\'])(.*?)\1/i';
+        $html = preg_replace_callback($pattern, static function (array $matches) use ($attr, $is_srcset): string {
+            $raw = isset($matches[2]) ? html_entity_decode((string) $matches[2], ENT_QUOTES, 'UTF-8') : '';
+            $value = $is_srcset ? acasa_normalize_srcset_value($raw) : acasa_to_root_relative_url($raw);
+            return $attr . '=' . $matches[1] . esc_attr($value) . $matches[1];
+        }, $html);
+    }
+
+    // Prevent lazy-loader plugins from withholding logo render on live-link/mobile.
+    $html = preg_replace('/\sdata-src=(["\']).*?\1/i', '', $html);
+    $html = preg_replace('/\sdata-srcset=(["\']).*?\1/i', '', $html);
+
+    $html = preg_replace_callback('/\bclass=(["\'])(.*?)\1/i', static function (array $matches): string {
+        $classes = preg_split('/\s+/', trim((string) $matches[2])) ?: [];
+        $classes = array_values(array_filter($classes, static function (string $class_name): bool {
+            return !in_array(strtolower($class_name), ['lazyload', 'lazyloading', 'lazyloaded'], true);
+        }));
+        return 'class=' . $matches[1] . esc_attr(implode(' ', $classes)) . $matches[1];
+    }, $html);
+
+    if (stripos($html, ' loading=') === false) {
+        $html = preg_replace('/<img\b/i', '<img loading="eager"', $html, 1);
+    } else {
+        $html = preg_replace('/\bloading=(["\']).*?\1/i', 'loading="eager"', $html);
+    }
+
+    if (stripos($html, ' fetchpriority=') === false) {
+        $html = preg_replace('/<img\b/i', '<img fetchpriority="high"', $html, 1);
+    } else {
+        $html = preg_replace('/\bfetchpriority=(["\']).*?\1/i', 'fetchpriority="high"', $html);
+    }
+
+    return $html;
+}, 20);
+
+/**
  * Remove default menu-bar items (search icon etc.) in the main header nav.
  * The locked header design uses a dedicated donate CTA on the right.
  *
