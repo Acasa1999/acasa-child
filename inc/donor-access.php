@@ -39,8 +39,14 @@ function acasa_ensure_donor_wp_user( $email, $first_name = '', $last_name = '', 
         $user_id = $existing->ID;
     } else {
         // Build display name from available data.
-        $parts = array_filter( [ $first_name, $last_name ] );
-        $display_name = ! empty( $parts ) ? implode( ' ', $parts ) : $email;
+        // Priority: first+last → first alone → email fallback (last alone is not valid).
+        if ( ! empty( $first_name ) && ! empty( $last_name ) ) {
+            $display_name = $first_name . ' ' . $last_name;
+        } elseif ( ! empty( $first_name ) ) {
+            $display_name = $first_name;
+        } else {
+            $display_name = $email;
+        }
 
         // Suppress WP's new-user notification for this creation only.
         add_filter( 'wp_send_new_user_notifications', '__return_false' );
