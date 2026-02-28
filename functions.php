@@ -489,10 +489,10 @@ function acasa_branding_target_map(): array {
         'generate_settings' => [
                 // Palette
                 'global_colors' => [
-                    [ 'name' => 'contrast',   'slug' => 'contrast',   'color' => '#101014' ],
-                    [ 'name' => 'contrast-2', 'slug' => 'contrast-2', 'color' => '#101014' ],
-                    [ 'name' => 'contrast-3', 'slug' => 'contrast-3', 'color' => '#101014' ],
-                    [ 'name' => 'base',       'slug' => 'base',       'color' => 'rgba(252,215,3,0.11)' ],
+                    [ 'name' => 'contrast',   'slug' => 'contrast',   'color' => '#1C1C2A' ],
+                    [ 'name' => 'contrast-2', 'slug' => 'contrast-2', 'color' => '#1C1C2A' ],
+                    [ 'name' => 'contrast-3', 'slug' => 'contrast-3', 'color' => '#1C1C2A' ],
+                    [ 'name' => 'base',       'slug' => 'base',       'color' => '#FFFBE8' ],
                     [ 'name' => 'base-2',     'slug' => 'base-2',     'color' => '#FFFBE8' ],
                     [ 'name' => 'base-3',     'slug' => 'base-3',     'color' => '#ffffff' ],
                     [ 'name' => 'accent',     'slug' => 'accent',     'color' => '#FCD602' ],
@@ -542,8 +542,9 @@ function acasa_branding_target_map(): array {
                 // Buttons
                 'form_button_background_color'       => 'var(--accent)',
                 'form_button_background_color_hover' => '#E8C400',
-                'form_button_text_color'             => 'var(--base-3)',
-                'form_button_text_color_hover'       => 'var(--base-3)',
+                // Accessibility rule: never white text on yellow.
+                'form_button_text_color'             => 'var(--contrast)',
+                'form_button_text_color_hover'       => 'var(--contrast)',
 
                 // Headings
                 'h1_color' => 'var(--contrast)',
@@ -884,6 +885,24 @@ function acasa_capture_current_state(array $target_map): array {
 }
 
 /**
+ * Compare values with minimal normalization for WordPress option/theme-mod storage.
+ * Avoid false diffs where DB returns numeric strings and target map uses ints.
+ */
+function acasa_branding_values_equal($from, $to): bool {
+    if ($from === $to) {
+        return true;
+    }
+
+    $from_is_int_like = is_int($from) || (is_string($from) && ctype_digit($from));
+    $to_is_int_like = is_int($to) || (is_string($to) && ctype_digit($to));
+    if ($from_is_int_like && $to_is_int_like) {
+        return (int) $from === (int) $to;
+    }
+
+    return false;
+}
+
+/**
  * Computes a change plan: what differs between current and desired.
  */
 function acasa_compute_plan(array $target_map): array {
@@ -901,7 +920,7 @@ function acasa_compute_plan(array $target_map): array {
             // Non-array desired value (rare): compare whole option value
             $from = $current_opt;
             $to   = $desired_pairs;
-            if ($from !== $to) {
+            if (!acasa_branding_values_equal($from, $to)) {
                 $plan['options'][$option_name]['__whole__'] = ['from' => $from, 'to' => $to];
                 $plan['counts']['options']++;
             }
@@ -914,7 +933,7 @@ function acasa_compute_plan(array $target_map): array {
 
         foreach ($desired_pairs as $k => $to) {
             $from = $current_opt[$k] ?? null;
-            if ($from !== $to) {
+            if (!acasa_branding_values_equal($from, $to)) {
                 if (!isset($plan['options'][$option_name])) {
                     $plan['options'][$option_name] = [];
                 }
@@ -927,7 +946,7 @@ function acasa_compute_plan(array $target_map): array {
     // Theme mods
     foreach (($target_map['theme_mods'] ?? []) as $mod_name => $to) {
         $from = get_theme_mod($mod_name, null);
-        if ($from !== $to) {
+        if (!acasa_branding_values_equal($from, $to)) {
             $plan['theme_mods'][$mod_name] = ['from' => $from, 'to' => $to];
             $plan['counts']['theme_mods']++;
         }
@@ -962,7 +981,7 @@ function acasa_apply_branding_seed(bool $force = false): array {
     foreach (($target['options'] ?? []) as $option_name => $desired_pairs) {
         if (!is_array($desired_pairs)) {
             $current_opt = get_option($option_name, null);
-            if ($force || $current_opt !== $desired_pairs) {
+            if ($force || !acasa_branding_values_equal($current_opt, $desired_pairs)) {
                 update_option($option_name, $desired_pairs);
             }
             continue;
@@ -976,7 +995,7 @@ function acasa_apply_branding_seed(bool $force = false): array {
         $dirty = false;
         foreach ($desired_pairs as $k => $to) {
             $from = $current_opt[$k] ?? null;
-            if ($force || $from !== $to) {
+            if ($force || !acasa_branding_values_equal($from, $to)) {
                 $current_opt[$k] = $to;
                 $dirty = true;
             }
@@ -990,7 +1009,7 @@ function acasa_apply_branding_seed(bool $force = false): array {
     // Apply theme mods
     foreach (($target['theme_mods'] ?? []) as $mod_name => $to) {
         $from = get_theme_mod($mod_name, null);
-        if ($force || $from !== $to) {
+        if ($force || !acasa_branding_values_equal($from, $to)) {
             set_theme_mod($mod_name, $to);
         }
     }
