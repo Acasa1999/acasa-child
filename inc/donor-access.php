@@ -302,7 +302,7 @@ function acasa_ajax_sync_donors() {
     check_ajax_referer( 'acasa_sync_donors' );
 
     if ( ! current_user_can( 'manage_options' ) ) {
-        wp_send_json_error( [ 'message' => 'Unauthorized.' ] );
+        wp_send_json_error( [ 'message' => 'Unauthorized.' ], 403 );
     }
 
     $results = acasa_run_donor_sync();
@@ -331,11 +331,13 @@ function acasa_run_donor_sync(): array {
     $counts = [ 'created' => 0, 'role_added' => 0, 'skipped' => 0, 'errors' => 0 ];
 
     // GiveWP v3+ stores all donor records in give_donors (not wp_postmeta).
-    // purchase_count > 0 means at least one confirmed donation exists.
+    // purchase_count > 0: GiveWP denormalised counter, incremented on confirm,
+    // decremented on refund/cancel. May drift in some v3 recalculation paths,
+    // but is a reliable enough proxy for "has at least one donation".
     global $wpdb;
     $donors = $wpdb->get_results( "
         SELECT id, email, name
-        FROM {$wpdb->prefix}give_donors
+        FROM {$wpdb->donors}
         WHERE purchase_count > 0
           AND email != ''
     " );
