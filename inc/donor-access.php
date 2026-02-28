@@ -80,17 +80,23 @@ function acasa_ensure_donor_wp_user( $email, $first_name = '', $last_name = '', 
  * Hook: create WP user when a donation is confirmed.
  * Fires on status transition to 'publish' (successful payment).
  */
-add_action( 'give_payment_status_pending_to_publish', 'acasa_on_donation_confirmed', 10, 2 );
-add_action( 'give_payment_status_subscription_to_publish', 'acasa_on_donation_confirmed', 10, 2 );
+add_action( 'give_update_payment_status', 'acasa_on_donation_confirmed', 10, 3 );
 
-function acasa_on_donation_confirmed( $payment_id, $payment ) {
-    $email     = give_get_payment_user_email( $payment_id );
-    $user_info = give_get_payment_meta_user_info( $payment_id );
+function acasa_on_donation_confirmed( $payment_id, $new_status, $old_status ) {
+    // Only act on transitions TO 'publish' (confirmed payment).
+    if ( 'publish' !== $new_status ) {
+        return;
+    }
+    // Guard against re-running if already was publish.
+    if ( 'publish' === $old_status ) {
+        return;
+    }
+
+    $email      = give_get_payment_user_email( $payment_id );
+    $user_info  = give_get_payment_meta_user_info( $payment_id );
     $first_name = $user_info['first_name'] ?? '';
     $last_name  = $user_info['last_name'] ?? '';
-
-    // Get GiveWP donor ID.
-    $donor_id = give_get_payment_donor_id( $payment_id );
+    $donor_id   = give_get_payment_donor_id( $payment_id );
 
     acasa_ensure_donor_wp_user( $email, $first_name, $last_name, (int) $donor_id );
 }
