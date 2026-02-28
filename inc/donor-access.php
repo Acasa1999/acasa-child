@@ -100,3 +100,51 @@ function acasa_on_donation_confirmed( $payment_id, $new_status, $old_status ) {
 
     acasa_ensure_donor_wp_user( $email, $first_name, $last_name, (int) $donor_id );
 }
+
+/**
+ * Returns true if the current user is a logged-in give_donor.
+ */
+function acasa_current_user_is_donor(): bool {
+    return is_user_logged_in() && current_user_can( 'give_donor' );
+}
+
+/**
+ * Exclude 'donatori' category from all queries for non-donors.
+ */
+add_action( 'pre_get_posts', 'acasa_exclude_donatori_from_queries' );
+
+function acasa_exclude_donatori_from_queries( WP_Query $query ) {
+    if ( acasa_current_user_is_donor() ) {
+        return;
+    }
+
+    $donatori = get_category_by_slug( 'donatori' );
+    if ( ! $donatori ) {
+        return; // Category doesn't exist yet — do nothing.
+    }
+
+    $excluded = $query->get( 'category__not_in' );
+    $excluded = is_array( $excluded ) ? $excluded : [];
+    $excluded[] = $donatori->term_id;
+    $query->set( 'category__not_in', $excluded );
+}
+
+/**
+ * Return 404 for direct URL access to 'donatori' posts by non-donors.
+ */
+add_action( 'template_redirect', 'acasa_gate_donatori_single' );
+
+function acasa_gate_donatori_single() {
+    if ( ! is_singular( 'post' ) ) {
+        return;
+    }
+    if ( acasa_current_user_is_donor() ) {
+        return;
+    }
+    if ( has_category( 'donatori', get_queried_object_id() ) ) {
+        global $wp_query;
+        $wp_query->set_404();
+        status_header( 404 );
+        nocache_headers();
+    }
+}
