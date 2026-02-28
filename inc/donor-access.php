@@ -175,8 +175,12 @@ function acasa_give_update_admin_notice() {
         return;
     }
 
-    // Dismiss: only delete if the warning actually exists.
-    if ( isset( $_GET['acasa_dismiss_give_notice'] ) && get_option( 'acasa_give_update_warning' ) ) {
+    // Dismiss: verify nonce and option before deleting.
+    if (
+        isset( $_GET['acasa_dismiss_give_notice'] ) &&
+        get_option( 'acasa_give_update_warning' ) &&
+        check_admin_referer( 'acasa_dismiss_give_notice' )
+    ) {
         delete_option( 'acasa_give_update_warning' );
         return;
     }
@@ -185,7 +189,10 @@ function acasa_give_update_admin_notice() {
         return;
     }
 
-    $dismiss_url = add_query_arg( 'acasa_dismiss_give_notice', '1' );
+    $dismiss_url = wp_nonce_url(
+        add_query_arg( 'acasa_dismiss_give_notice', '1' ),
+        'acasa_dismiss_give_notice'
+    );
     printf(
         '<div class="notice notice-warning"><p>'
         . '<strong>ACASA Donor Access:</strong> GiveWP was updated. '
@@ -335,6 +342,7 @@ function acasa_run_donor_sync(): array {
     // decremented on refund/cancel. May drift in some v3 recalculation paths,
     // but is a reliable enough proxy for "has at least one donation".
     global $wpdb;
+    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user-supplied parameters, static query
     $donors = $wpdb->get_results( "
         SELECT id, email, name
         FROM {$wpdb->donors}
