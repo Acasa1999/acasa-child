@@ -196,3 +196,48 @@ function acasa_give_update_admin_notice() {
         esc_url( $dismiss_url )
     );
 }
+
+/**
+ * After GiveWP validates an email-access token (wp@14), upgrade
+ * the GiveWP session to a real WordPress login session (wp@15).
+ *
+ * Depends on: Give_Email_Access::init() at wp@14
+ * Hook to verify after GiveWP updates: Give_Email_Access::init() in
+ *   give/includes/class-give-email-access.php
+ */
+add_action( 'wp', 'acasa_upgrade_email_access_to_wp_session', 15 );
+
+function acasa_upgrade_email_access_to_wp_session() {
+    // Already logged in — nothing to do.
+    if ( is_user_logged_in() ) {
+        return;
+    }
+
+    // GiveWP hasn't validated a token on this request.
+    if ( ! Give()->email_access->token_exists ) {
+        return;
+    }
+
+    $email = Give()->email_access->token_email;
+    if ( empty( $email ) ) {
+        return;
+    }
+
+    $user = get_user_by( 'email', $email );
+    if ( ! $user ) {
+        // Donor has no WP account yet — defensive fallback.
+        return;
+    }
+
+    // Use GiveWP's session lifetime setting for the WP auth cookie.
+    $expiry = (int) give_get_option( 'session_lifetime', 172800 );
+
+    add_filter( 'auth_cookie_expiration', function() use ( $expiry ) {
+        return $expiry;
+    } );
+
+    wp_set_current_user( $user->ID );
+    wp_set_auth_cookie( $user->ID, false );
+
+    remove_all_filters( 'auth_cookie_expiration' );
+}
