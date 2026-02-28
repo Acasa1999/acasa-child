@@ -148,3 +148,46 @@ function acasa_gate_donatori_single() {
         nocache_headers();
     }
 }
+
+/**
+ * Set a flag when GiveWP is updated, so we can warn about hook verification.
+ */
+add_action( 'upgrader_process_complete', 'acasa_detect_give_update', 10, 2 );
+
+function acasa_detect_give_update( $upgrader, $options ) {
+    if (
+        isset( $options['action'], $options['type'], $options['plugins'] ) &&
+        $options['action'] === 'update' &&
+        $options['type'] === 'plugin' &&
+        in_array( 'give/give.php', (array) $options['plugins'], true )
+    ) {
+        update_option( 'acasa_give_update_warning', '1' );
+    }
+}
+
+/**
+ * Show persistent admin notice after GiveWP update until dismissed.
+ */
+add_action( 'admin_notices', 'acasa_give_update_admin_notice' );
+
+function acasa_give_update_admin_notice() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return;
+    }
+    if ( isset( $_GET['acasa_dismiss_give_notice'] ) ) {
+        delete_option( 'acasa_give_update_warning' );
+    }
+    if ( ! get_option( 'acasa_give_update_warning' ) ) {
+        return;
+    }
+    $dismiss_url = add_query_arg( 'acasa_dismiss_give_notice', '1' );
+    printf(
+        '<div class="notice notice-warning"><p>'
+        . '<strong>ACASA Donor Access:</strong> GiveWP was updated. '
+        . 'Verify that <code>Give_Email_Access::init()</code> still fires on the <code>wp</code> '
+        . 'action at priority&nbsp;14 and sets <code>token_exists</code> / <code>token_email</code> '
+        . 'before priority&nbsp;15 — donor magic link login depends on it. '
+        . '<a href="%s">Dismiss once verified</a>.</p></div>',
+        esc_url( $dismiss_url )
+    );
+}
