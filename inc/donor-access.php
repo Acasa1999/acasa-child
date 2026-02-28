@@ -124,7 +124,7 @@ function acasa_exclude_donatori_from_queries( WP_Query $query ) {
     }
 
     $excluded = $query->get( 'category__not_in' );
-    $excluded = is_array( $excluded ) ? $excluded : [];
+    $excluded = array_values( array_filter( array_map( 'intval', (array) $excluded ) ) );
     $excluded[] = $donatori->term_id;
     $query->set( 'category__not_in', $excluded );
 }
