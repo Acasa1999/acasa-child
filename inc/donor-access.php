@@ -14,3 +14,77 @@
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
+
+/**
+ * Create or update a WP user account for a donor.
+ *
+ * @param string $email         Donor email.
+ * @param string $first_name    Donor first name (may be empty).
+ * @param string $last_name     Donor last name (may be empty).
+ * @param int    $give_donor_id GiveWP donor ID (for linking).
+ * @return int|WP_Error WP user ID on success, WP_Error on failure.
+ */
+function acasa_ensure_donor_wp_user( $email, $first_name = '', $last_name = '', $give_donor_id = 0 ) {
+    if ( empty( $email ) || ! is_email( $email ) ) {
+        return new WP_Error( 'invalid_email', 'Invalid donor email.' );
+    }
+
+    $existing = get_user_by( 'email', $email );
+
+    if ( $existing ) {
+        // User exists — ensure give_donor role is present.
+        if ( ! in_array( 'give_donor', (array) $existing->roles, true ) ) {
+            $existing->add_role( 'give_donor' );
+        }
+        $user_id = $existing->ID;
+    } else {
+        // Build display name from available data.
+        $parts = array_filter( [ $first_name, $last_name ] );
+        $display_name = ! empty( $parts ) ? implode( ' ', $parts ) : $email;
+
+        // Suppress WP's new-user notification for this creation only.
+        add_filter( 'wp_send_new_user_notifications', '__return_false' );
+
+        $user_id = wp_insert_user( [
+            'user_email'   => $email,
+            'user_login'   => $email,
+            'user_pass'    => wp_generate_password( 64, true, true ),
+            'display_name' => $display_name,
+            'first_name'   => $first_name,
+            'last_name'    => $last_name,
+            'role'         => 'give_donor',
+        ] );
+
+        remove_filter( 'wp_send_new_user_notifications', '__return_false' );
+
+        if ( is_wp_error( $user_id ) ) {
+            return $user_id;
+        }
+    }
+
+    // Link WP user to GiveWP donor record.
+    if ( $give_donor_id > 0 ) {
+        Give()->donors->update( $give_donor_id, [ 'user_id' => $user_id ] );
+    }
+
+    return $user_id;
+}
+
+/**
+ * Hook: create WP user when a donation is confirmed.
+ * Fires on status transition to 'publish' (successful payment).
+ */
+add_action( 'give_payment_status_pending_to_publish', 'acasa_on_donation_confirmed', 10, 2 );
+add_action( 'give_payment_status_subscription_to_publish', 'acasa_on_donation_confirmed', 10, 2 );
+
+function acasa_on_donation_confirmed( $payment_id, $payment ) {
+    $email     = give_get_payment_user_email( $payment_id );
+    $user_info = give_get_payment_meta_user_info( $payment_id );
+    $first_name = $user_info['first_name'] ?? '';
+    $last_name  = $user_info['last_name'] ?? '';
+
+    // Get GiveWP donor ID.
+    $donor_id = give_get_payment_donor_id( $payment_id );
+
+    acasa_ensure_donor_wp_user( $email, $first_name, $last_name, (int) $donor_id );
+}
