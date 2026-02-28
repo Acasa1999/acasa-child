@@ -232,12 +232,13 @@ function acasa_upgrade_email_access_to_wp_session() {
     // Use GiveWP's session lifetime setting for the WP auth cookie.
     $expiry = (int) give_get_option( 'session_lifetime', 172800 );
 
-    add_filter( 'auth_cookie_expiration', function() use ( $expiry ) {
+    $expiry_filter = function() use ( $expiry ) {
         return $expiry;
-    } );
+    };
+    add_filter( 'auth_cookie_expiration', $expiry_filter );
 
     wp_set_current_user( $user->ID );
-    wp_set_auth_cookie( $user->ID, false );
+    wp_set_auth_cookie( $user->ID, true );
 
-    remove_all_filters( 'auth_cookie_expiration' );
+    remove_filter( 'auth_cookie_expiration', $expiry_filter );
 }
