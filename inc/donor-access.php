@@ -174,12 +174,17 @@ function acasa_give_update_admin_notice() {
     if ( ! current_user_can( 'manage_options' ) ) {
         return;
     }
-    if ( isset( $_GET['acasa_dismiss_give_notice'] ) ) {
+
+    // Dismiss: only delete if the warning actually exists.
+    if ( isset( $_GET['acasa_dismiss_give_notice'] ) && get_option( 'acasa_give_update_warning' ) ) {
         delete_option( 'acasa_give_update_warning' );
+        return;
     }
+
     if ( ! get_option( 'acasa_give_update_warning' ) ) {
         return;
     }
+
     $dismiss_url = add_query_arg( 'acasa_dismiss_give_notice', '1' );
     printf(
         '<div class="notice notice-warning"><p>'
