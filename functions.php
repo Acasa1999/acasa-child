@@ -1019,20 +1019,31 @@ function acasa_account_display_payload(int $avatar_size = 30, string $avatar_cla
         return $payload;
     }
 
-    $first_name = trim((string) get_user_meta((int) $user->ID, 'first_name', true));
-    if ($first_name === '') {
-        $first_name = 'Fără nume';
+    // Use display_name so wp-admin "Afișează numele ca" is respected.
+    $label = trim( $user->display_name );
+    if ( $label === '' || $label === $user->user_email ) {
+        // Fallback: never expose full email in nav UI.
+        $label = function_exists( 'acasa_build_display_name' )
+            ? acasa_build_display_name(
+                (string) get_user_meta( (int) $user->ID, 'first_name', true ),
+                (string) get_user_meta( (int) $user->ID, 'last_name', true ),
+                $user->user_email
+            )
+            : 'Contul meu';
+    }
+    if ( $label === '' ) {
+        $label = 'Contul meu';
     }
 
     $payload['is_logged_in'] = true;
-    $payload['label'] = $first_name;
+    $payload['label'] = $label;
     $payload['user_id'] = (int) $user->ID;
 
     $avatar_markup = get_avatar(
         (int) $user->ID,
         max(16, (int) $avatar_size),
         '',
-        $first_name,
+        $label,
         [
             'class' => $avatar_class,
             'force_display' => true,
@@ -1067,7 +1078,7 @@ add_action('generate_inside_mobile_menu_control_wrapper', function (): void {
     }
 
     if (!empty($sem['account']['present'])) {
-        $account_url = is_string($sem['account']['url']) && $sem['account']['url'] !== '' ? $sem['account']['url'] : home_url('/panoul-de-control-al-donatorilor/');
+        $account_url = is_string($sem['account']['url']) && $sem['account']['url'] !== '' ? $sem['account']['url'] : home_url('/donatii-online/panou-de-control/');
         $account_title = is_string($sem['account']['title']) && $sem['account']['title'] !== '' ? $sem['account']['title'] : 'Contul meu';
         $account_display = acasa_account_display_payload(20, 'acasa-mobile-account-avatar');
         echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--account" href="' . esc_url($account_url) . '" aria-label="' . esc_attr($account_title) . '">';

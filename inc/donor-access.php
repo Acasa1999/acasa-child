@@ -15,6 +15,286 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+// All hooks below depend on GiveWP. Bail if the plugin is not active.
+if ( ! class_exists( 'Give' ) ) {
+    return;
+}
+
+/* =========================================================================
+   Shared helpers
+   ========================================================================= */
+
+/**
+ * Build a display name from available parts.
+ *
+ * Priority: first+last → first → last → first 3 chars of email + "…".
+ * Full email is never returned (privacy).
+ *
+ * @return string Display name (may be empty if all inputs are empty).
+ */
+function acasa_build_display_name( string $first, string $last, string $email = '' ): string {
+    $first = trim( $first );
+    $last  = trim( $last );
+
+    if ( $first !== '' && $last !== '' ) {
+        return "$first $last";
+    }
+    if ( $first !== '' ) {
+        return $first;
+    }
+    if ( $last !== '' ) {
+        return $last;
+    }
+    if ( $email !== '' ) {
+        $local = strstr( $email, '@', true );
+        if ( $local === false ) {
+            $local = $email;
+        }
+        $prefix = function_exists( 'mb_substr' )
+            ? mb_substr( $local, 0, 3 )
+            : substr( $local, 0, 3 );
+        return $prefix . '…';
+    }
+    return '';
+}
+
+/**
+ * Check whether a user is allowed to have a custom avatar.
+ *
+ * Today: give_donor role. Future: add 'volunteer' here.
+ */
+function acasa_user_can_have_avatar( int $user_id ): bool {
+    $user = get_userdata( $user_id );
+    if ( ! $user ) {
+        return false;
+    }
+    return in_array( 'give_donor', (array) $user->roles, true );
+}
+
+/**
+ * Resolve canonical donor avatar attachment ID from GiveWP donor meta.
+ *
+ * For compatibility, migrate legacy acasa_avatar_id usermeta to GiveWP once.
+ */
+function acasa_get_donor_avatar_id( int $user_id ): int {
+    if ( $user_id <= 0 ) {
+        return 0;
+    }
+
+    $donor = new Give_Donor( $user_id, true );
+    if ( ! $donor || empty( $donor->id ) ) {
+        return 0;
+    }
+
+    $avatar_id = (int) Give()->donor_meta->get_meta( $donor->id, '_give_donor_avatar_id', true );
+    if ( $avatar_id > 0 ) {
+        return $avatar_id;
+    }
+
+    $legacy_avatar_id = (int) get_user_meta( $user_id, 'acasa_avatar_id', true );
+    if ( $legacy_avatar_id > 0 ) {
+        Give()->donor_meta->update_meta( $donor->id, '_give_donor_avatar_id', $legacy_avatar_id );
+        delete_user_meta( $user_id, 'acasa_avatar_id' );
+        return $legacy_avatar_id;
+    }
+
+    return 0;
+}
+
+/**
+ * Resolve avatar URL from attachment ID with a preferred square size.
+ */
+function acasa_get_avatar_url_from_attachment( int $attachment_id, $args = [] ): string {
+    if ( $attachment_id <= 0 ) {
+        return '';
+    }
+
+    $size = isset( $args['size'] ) ? max( 16, (int) $args['size'] ) : 96;
+    $image = wp_get_attachment_image_src( $attachment_id, [ $size, $size ] );
+    if ( is_array( $image ) && ! empty( $image[0] ) ) {
+        return (string) $image[0];
+    }
+
+    $url = wp_get_attachment_url( $attachment_id );
+    return is_string( $url ) ? $url : '';
+}
+
+/* =========================================================================
+   Avatar system — local-only, no Gravatar
+   ========================================================================= */
+
+/**
+ * Intercept every avatar lookup. Serve local attachment or "A" SVG default.
+ * Gravatar URLs are never generated.
+ */
+add_filter( 'pre_get_avatar_data', 'acasa_local_avatar_data', 10, 2 );
+
+function acasa_local_avatar_data( $args, $id_or_email ) {
+    // Resolve to a WP user ID.
+    $user_id = 0;
+    if ( is_numeric( $id_or_email ) ) {
+        $user_id = (int) $id_or_email;
+    } elseif ( $id_or_email instanceof WP_User ) {
+        $user_id = $id_or_email->ID;
+    } elseif ( $id_or_email instanceof WP_Post ) {
+        $user_id = (int) $id_or_email->post_author;
+    } elseif ( $id_or_email instanceof WP_Comment ) {
+        if ( ! empty( $id_or_email->user_id ) ) {
+            $user_id = (int) $id_or_email->user_id;
+        }
+    } elseif ( is_string( $id_or_email ) && is_email( $id_or_email ) ) {
+        $user = get_user_by( 'email', $id_or_email );
+        if ( $user ) {
+            $user_id = $user->ID;
+        }
+    }
+
+    // Default: "A" SVG from child theme.
+    $default_url = get_stylesheet_directory_uri() . '/avatar-default.svg';
+
+    if ( $user_id <= 0 ) {
+        $args['url']          = $default_url;
+        $args['found_avatar'] = true;
+        return $args;
+    }
+
+    // Canonical source: GiveWP donor meta (_give_donor_avatar_id).
+    $attachment_id = acasa_get_donor_avatar_id( $user_id );
+    $url = acasa_get_avatar_url_from_attachment( $attachment_id, $args );
+
+    // 3. Serve resolved URL or fall back to "A" SVG.
+    if ( $url ) {
+        $args['url']          = $url;
+        $args['found_avatar'] = true;
+        return $args;
+    }
+
+    $args['url']          = $default_url;
+    $args['found_avatar'] = true;
+    return $args;
+}
+
+/* =========================================================================
+   Avatar controls in WP profile (read + delete only)
+   ========================================================================= */
+
+/**
+ * Replace WP's Gravatar profile picture section with local avatar controls.
+ *
+ * Upload/change stays in GiveWP Donor Dashboard.
+ * WP profile only shows current avatar and allows delete.
+ */
+add_filter( 'user_profile_picture_description', '__return_empty_string' );
+
+add_action( 'admin_head-profile.php',  'acasa_avatar_admin_styles' );
+add_action( 'admin_head-user-edit.php','acasa_avatar_admin_styles' );
+
+function acasa_avatar_admin_styles() {
+    echo '<style>'
+        . '.user-profile-picture td > .avatar { display: none !important; }'
+        . '.user-profile-picture td > .description { display: none !important; }'
+        . '#acasa-avatar-stage { display: none; }'
+        . '</style>';
+}
+
+add_action( 'show_user_profile', 'acasa_admin_avatar_field' );
+add_action( 'edit_user_profile', 'acasa_admin_avatar_field' );
+
+function acasa_admin_avatar_field( WP_User $user ) {
+    $is_donor = acasa_user_can_have_avatar( $user->ID );
+    $can_manage = $is_donor && current_user_can( 'edit_user', $user->ID );
+    $attachment_id = $is_donor ? acasa_get_donor_avatar_id( $user->ID ) : 0;
+    $preview_url = acasa_get_avatar_url_from_attachment( $attachment_id, [ 'size' => 96 ] );
+    $default_url   = get_stylesheet_directory_uri() . '/avatar-default.svg';
+
+    if ( $can_manage ) {
+        wp_nonce_field( 'acasa_avatar_delete', 'acasa_avatar_nonce' );
+    }
+    ?>
+    <div id="acasa-avatar-stage">
+        <div id="acasa-avatar-preview" style="margin-bottom:8px;">
+            <img src="<?php echo esc_url( $preview_url ?: $default_url ); ?>" style="max-width:96px;height:auto;border-radius:50%;" />
+        </div>
+        <?php if ( $can_manage ) : ?>
+            <input type="hidden" id="acasa_avatar_delete" name="acasa_avatar_delete" value="0" />
+            <button
+                type="button"
+                id="acasa-avatar-remove"
+                class="button"
+                <?php echo $attachment_id <= 0 ? 'style="display:none;"' : ''; ?>
+            >
+                <?php esc_html_e( 'Șterge', 'acasa-child' ); ?>
+            </button>
+            <p class="description" style="margin-top:8px;">
+                <?php esc_html_e( 'Schimbarea imaginii se face din Panoul Donatorului (GiveWP).', 'acasa-child' ); ?>
+            </p>
+        <?php endif; ?>
+    </div>
+    <script>
+    jQuery(function($){
+        // Move our controls into the existing profile picture cell.
+        var $stage = $('#acasa-avatar-stage');
+        var $cell = $('.user-profile-picture td');
+        if ($cell.length && $stage.length) {
+            $stage.prependTo($cell).show();
+        }
+        <?php if ( $can_manage ) : ?>
+        var defaultUrl = <?php echo wp_json_encode( $default_url ); ?>;
+        $('#acasa-avatar-remove').on('click', function(e){
+            e.preventDefault();
+            $('#acasa_avatar_delete').val('1');
+            $('#acasa-avatar-preview').html('<img src="'+defaultUrl+'" style="max-width:96px;height:auto;border-radius:50%;" />');
+            $(this).hide();
+        });
+        <?php endif; ?>
+    });
+    </script>
+    <?php
+}
+
+/**
+ * Save avatar delete action from WP admin profile form.
+ */
+add_action( 'personal_options_update',  'acasa_admin_avatar_save' );
+add_action( 'edit_user_profile_update', 'acasa_admin_avatar_save' );
+
+function acasa_admin_avatar_save( int $user_id ) {
+    if (
+        ! isset( $_POST['acasa_avatar_nonce'] ) ||
+        ! wp_verify_nonce( $_POST['acasa_avatar_nonce'], 'acasa_avatar_delete' )
+    ) {
+        return;
+    }
+    if ( ! current_user_can( 'edit_user', $user_id ) ) {
+        return;
+    }
+    if ( ! acasa_user_can_have_avatar( $user_id ) ) {
+        return;
+    }
+
+    $should_delete = isset( $_POST['acasa_avatar_delete'] )
+        && '1' === sanitize_text_field( wp_unslash( $_POST['acasa_avatar_delete'] ) );
+    if ( ! $should_delete ) {
+        return;
+    }
+
+    $donor = new Give_Donor( $user_id, true );
+    if ( ! $donor || ! $donor->id ) {
+        return;
+    }
+
+    $avatar_id = (int) Give()->donor_meta->get_meta( $donor->id, '_give_donor_avatar_id', true );
+    if ( $avatar_id > 0 ) {
+        $owner_id = (int) get_post_field( 'post_author', $avatar_id );
+        if ( $owner_id === $user_id ) {
+            wp_delete_attachment( $avatar_id, true );
+        }
+    }
+
+    Give()->donor_meta->update_meta( $donor->id, '_give_donor_avatar_id', '' );
+    delete_user_meta( $user_id, 'acasa_avatar_id' );
+}
+
 /**
  * Create or update a WP user account for a donor.
  *
@@ -39,16 +319,15 @@ function acasa_ensure_donor_wp_user( $email, $first_name = '', $last_name = '', 
         $user_id = $existing->ID;
     } else {
         // Build display name from available data.
-        // Priority: first+last → first alone → email fallback (last alone is not valid).
-        if ( ! empty( $first_name ) && ! empty( $last_name ) ) {
-            $display_name = $first_name . ' ' . $last_name;
-        } elseif ( ! empty( $first_name ) ) {
-            $display_name = $first_name;
-        } else {
-            $display_name = $email;
-        }
+        // Priority: first+last → first → last → truncated email.
+        // Full email is never used as display name (privacy).
+        $display_name = acasa_build_display_name( $first_name, $last_name, $email );
 
-        // Suppress WP's new-user notification for this creation only.
+        // Double fail-safe: wp_insert_user() alone does not trigger the
+        // new-user email (that only happens via higher-level registration
+        // flows). This filter is a defensive second layer — if a plugin or
+        // future WP core change ever wires wp_insert_user() into the
+        // notification path, the filter will silently suppress the email.
         add_filter( 'wp_send_new_user_notifications', '__return_false' );
 
         $user_id = wp_insert_user( [
@@ -102,10 +381,12 @@ function acasa_on_donation_confirmed( $payment_id, $new_status, $old_status ) {
 }
 
 /**
- * Returns true if the current user is a logged-in give_donor.
+ * Returns true if the current user should see donor-only content.
+ * Grants access to give_donor role holders AND site administrators.
  */
 function acasa_current_user_is_donor(): bool {
-    return is_user_logged_in() && current_user_can( 'give_donor' );
+    return is_user_logged_in()
+        && ( current_user_can( 'give_donor' ) || current_user_can( 'manage_options' ) );
 }
 
 /**
@@ -328,6 +609,66 @@ function acasa_clear_email_access_on_logout( $user_id = 0 ) {
 }
 
 /**
+ * Sync GiveWP donor profile changes → WordPress user profile.
+ *
+ * GiveWP already syncs WP→GiveWP (admin-actions.php hooks on
+ * edit_user_profile_update / profile_update). This closes the reverse
+ * direction: donor dashboard edits → WP user first_name, last_name,
+ * user_email.
+ *
+ * No-loop: GiveWP's own WP→GiveWP sync uses the legacy Give_DB_Donors
+ * API which does NOT fire givewp_donor_updated, so this hook cannot
+ * re-trigger itself.
+ */
+add_action( 'givewp_donor_updated', 'acasa_sync_donor_profile_to_wp', 10, 1 );
+
+function acasa_sync_donor_profile_to_wp( $donor ) {
+    if ( empty( $donor->userId ) ) {
+        return;
+    }
+
+    $wp_user = get_userdata( (int) $donor->userId );
+    if ( ! $wp_user ) {
+        return;
+    }
+
+    $first = isset( $donor->firstName ) ? trim( (string) $donor->firstName ) : '';
+    $last  = isset( $donor->lastName )  ? trim( (string) $donor->lastName )  : '';
+    $email = isset( $donor->email )     ? trim( (string) $donor->email )     : '';
+
+    // Collect only changed fields.
+    $update = [ 'ID' => $wp_user->ID ];
+    if ( $first !== get_user_meta( $wp_user->ID, 'first_name', true ) ) {
+        $update['first_name'] = $first;
+    }
+    if ( $last !== get_user_meta( $wp_user->ID, 'last_name', true ) ) {
+        $update['last_name'] = $last;
+    }
+    // Keep wp-admin "Display name publicly as" under WP user control.
+    if ( $email !== '' && $email !== $wp_user->user_email ) {
+        $update['user_email'] = $email;
+    }
+
+    // Nothing changed — skip wp_update_user() entirely.
+    if ( count( $update ) === 1 ) {
+        return;
+    }
+
+    // Suppress WP's "your email was changed" notification — the donor
+    // already confirmed the change in GiveWP's dashboard UI.
+    $email_changed = isset( $update['user_email'] );
+    if ( $email_changed ) {
+        add_filter( 'send_email_change_email', '__return_false' );
+    }
+
+    wp_update_user( $update );
+
+    if ( $email_changed ) {
+        remove_filter( 'send_email_change_email', '__return_false' );
+    }
+}
+
+/**
  * Register Tools > Sync Donor Accounts admin page.
  */
 add_action( 'admin_menu', function() {
@@ -444,6 +785,8 @@ function acasa_run_donor_sync(): array {
                 $existing->add_role( 'give_donor' );
                 $counts['role_added']++;
             }
+            // Ensure GiveWP donor record is linked to the WP user.
+            Give()->donors->update( (int) $donor->id, [ 'user_id' => $existing->ID ] );
         } else {
             // Split the full name from give_donors.name into first / last.
             $full_name  = trim( $donor->name );
