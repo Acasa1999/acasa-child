@@ -520,6 +520,69 @@ function acasa_current_user_is_donor(): bool {
 }
 
 /**
+ * Restrict wp-admin access for non-admin donor accounts.
+ * Admin users remain allowed even if they also have give_donor role.
+ */
+function acasa_is_restricted_donor_user( ?WP_User $user = null ): bool {
+    $user = $user ?: wp_get_current_user();
+    if ( ! ( $user instanceof WP_User ) || ! $user->exists() ) {
+        return false;
+    }
+
+    if ( user_can( $user, 'manage_options' ) ) {
+        return false;
+    }
+
+    return in_array( 'give_donor', (array) $user->roles, true );
+}
+
+/**
+ * Resolve donor dashboard URL from GiveWP settings.
+ */
+function acasa_get_donor_dashboard_url(): string {
+    if ( function_exists( 'give_get_option' ) ) {
+        $page_id = (int) give_get_option( 'donor_dashboard_page' );
+        if ( $page_id > 0 ) {
+            $url = get_permalink( $page_id );
+            if ( is_string( $url ) && $url !== '' ) {
+                return $url;
+            }
+        }
+    }
+
+    return home_url( '/' );
+}
+
+add_action( 'admin_init', function (): void {
+    if ( wp_doing_ajax() || ( defined( 'DOING_CRON' ) && DOING_CRON ) ) {
+        return;
+    }
+
+    if ( ! is_user_logged_in() ) {
+        return;
+    }
+
+    if ( ! acasa_is_restricted_donor_user() ) {
+        return;
+    }
+
+    wp_safe_redirect( acasa_get_donor_dashboard_url() );
+    exit;
+}, 1 );
+
+add_filter( 'show_admin_bar', function ( bool $show ): bool {
+    if ( ! is_user_logged_in() ) {
+        return $show;
+    }
+
+    if ( acasa_is_restricted_donor_user() ) {
+        return false;
+    }
+
+    return $show;
+}, 20 );
+
+/**
  * Exclude 'donatori' category from all queries for non-donors.
  */
 add_action( 'pre_get_posts', 'acasa_exclude_donatori_from_queries' );
