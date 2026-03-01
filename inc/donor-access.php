@@ -369,6 +369,59 @@ if ( ! class_exists( 'Give' ) || ! class_exists( 'Give_Donor' ) || ! function_ex
 }
 
 /**
+ * Link GiveWP donor row to a WordPress user.
+ *
+ * Primary path: Give()->donors->update().
+ * Fallback path: direct SQL update on {$wpdb->donors}.user_id.
+ *
+ * @param int         $donor_id GiveWP donor ID.
+ * @param int         $user_id  WordPress user ID.
+ * @param string|null $mode     Output mode: service|sql|no_change.
+ * @return true|WP_Error
+ */
+function acasa_link_donor_to_user( int $donor_id, int $user_id, ?string &$mode = null ) {
+    $mode = null;
+
+    if ( $donor_id <= 0 || $user_id <= 0 ) {
+        return new WP_Error( 'invalid_link_ids', 'Invalid donor_id or user_id for link operation.' );
+    }
+
+    try {
+        $donors_service = Give()->donors;
+        if ( is_object( $donors_service ) && method_exists( $donors_service, 'update' ) ) {
+            $donors_service->update( $donor_id, [ 'user_id' => $user_id ] );
+            $mode = 'service';
+            return true;
+        }
+    } catch ( Throwable $e ) {
+        // Fall through to SQL fallback.
+    }
+
+    global $wpdb;
+    if ( ! isset( $wpdb->donors ) || ! is_string( $wpdb->donors ) || $wpdb->donors === '' ) {
+        return new WP_Error( 'missing_donors_table', 'GiveWP donors table is unavailable for fallback link.' );
+    }
+
+    $updated = $wpdb->update(
+        $wpdb->donors,
+        [ 'user_id' => $user_id ],
+        [ 'id' => $donor_id ],
+        [ '%d' ],
+        [ '%d' ]
+    );
+
+    if ( $updated === false ) {
+        return new WP_Error(
+            'donor_link_sql_failed',
+            'Direct donor link update failed: ' . (string) $wpdb->last_error
+        );
+    }
+
+    $mode = $updated === 0 ? 'no_change' : 'sql';
+    return true;
+}
+
+/**
  * Create or update a WP user account for a donor.
  *
  * @param string $email         Donor email.
@@ -422,7 +475,11 @@ function acasa_ensure_donor_wp_user( $email, $first_name = '', $last_name = '', 
 
     // Link WP user to GiveWP donor record.
     if ( $give_donor_id > 0 ) {
-        Give()->donors->update( $give_donor_id, [ 'user_id' => $user_id ] );
+        $link_mode = null;
+        $link_result = acasa_link_donor_to_user( (int) $give_donor_id, (int) $user_id, $link_mode );
+        if ( is_wp_error( $link_result ) ) {
+            return $link_result;
+        }
     }
 
     return $user_id;
@@ -878,9 +935,24 @@ function acasa_sync_donor_profile_to_wp( $donor ) {
 }
 
 /**
- * Register Tools > Sync Donor Accounts admin page.
+ * Register ACASA > Sync Donors admin page.
  */
-add_action( 'admin_menu', function() {
+add_action( 'admin_menu', 'acasa_register_sync_donors_admin_page', 40 );
+
+function acasa_register_sync_donors_admin_page() {
+    if ( defined( 'ACASA_ADMIN_MENU_SLUG' ) && ACASA_ADMIN_MENU_SLUG ) {
+        add_submenu_page(
+            ACASA_ADMIN_MENU_SLUG,
+            'Sync Donor Accounts',
+            'Sync Donors',
+            'manage_options',
+            'acasa-sync-donors',
+            'acasa_render_sync_donors_page'
+        );
+        return;
+    }
+
+    // Fallback if ACASA admin menu slug is unavailable.
     add_management_page(
         'Sync Donor Accounts',
         'Sync Donor Accounts',
@@ -888,7 +960,7 @@ add_action( 'admin_menu', function() {
         'acasa-sync-donors',
         'acasa_render_sync_donors_page'
     );
-} );
+}
 
 function acasa_render_sync_donors_page() {
     ?>
@@ -896,16 +968,39 @@ function acasa_render_sync_donors_page() {
         <h1>Sync Donor Accounts</h1>
         <p>Creates WP user accounts (role: <code>give_donor</code>) for all donors with at least one
         confirmed donation. Safe to run multiple times — existing accounts are skipped.</p>
+        <h2>How to use</h2>
+        <ol>
+            <li>Open <code>ACASA &gt; Sync Donors</code>.</li>
+            <li>Click <strong>Run Sync</strong>.</li>
+            <li>Review summary and detailed reports for matched and not matched users.</li>
+        </ol>
+
+        <h2>What this tool does</h2>
+        <ul>
+            <li>Reads GiveWP donors from <code>give_donors</code> where <code>purchase_count &gt; 0</code> and email is not empty.</li>
+            <li>Matches donor to WP user by email.</li>
+            <li>If matched: ensures <code>give_donor</code> role and links donor <code>user_id</code>.</li>
+            <li>If not matched: creates WP user with <code>give_donor</code> role and links it to donor record.</li>
+            <li>Parses donor full name into first and last name for newly created users.</li>
+        </ul>
+
+        <h2>What this tool does not do</h2>
+        <ul>
+            <li>Does not modify donation records or totals.</li>
+            <li>Does not reset passwords for existing users.</li>
+            <li>Does not overwrite existing profile fields for matched users (except adding missing donor role).</li>
+        </ul>
+
         <button id="acasa-sync-btn" class="button button-primary">Run Sync</button>
         <span id="acasa-sync-status" style="margin-left:12px;"></span>
-        <div id="acasa-sync-results" style="margin-top:16px;font-family:monospace;white-space:pre;"></div>
+        <div id="acasa-sync-results" style="margin-top:16px;"></div>
     </div>
     <script>
     document.getElementById('acasa-sync-btn').addEventListener('click', function() {
         var btn = this;
         btn.disabled = true;
         document.getElementById('acasa-sync-status').textContent = 'Running\u2026';
-        document.getElementById('acasa-sync-results').textContent = '';
+        document.getElementById('acasa-sync-results').innerHTML = '';
 
         fetch(ajaxurl, {
             method: 'POST',
@@ -915,7 +1010,13 @@ function acasa_render_sync_donors_page() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             document.getElementById('acasa-sync-status').textContent = data.success ? 'Done.' : 'Error.';
-            document.getElementById('acasa-sync-results').textContent = data.data.message;
+            if (data && data.data && data.data.report_html) {
+                document.getElementById('acasa-sync-results').innerHTML = data.data.report_html;
+            } else if (data && data.data && data.data.message) {
+                document.getElementById('acasa-sync-results').textContent = data.data.message;
+            } else {
+                document.getElementById('acasa-sync-results').textContent = 'No report data returned.';
+            }
             btn.disabled = false;
         })
         .catch(function() {
@@ -940,15 +1041,18 @@ function acasa_ajax_sync_donors() {
     }
 
     $results = acasa_run_donor_sync();
+    $summary = sprintf(
+        'Created: %d | Role added: %d | Skipped: %d | Errors: %d',
+        (int) $results['created'],
+        (int) $results['role_added'],
+        (int) $results['skipped'],
+        (int) $results['errors']
+    );
 
     wp_send_json_success( [
-        'message' => sprintf(
-            "Created: %d\nRole added to existing user: %d\nSkipped (already correct): %d\nErrors: %d",
-            $results['created'],
-            $results['role_added'],
-            $results['skipped'],
-            $results['errors']
-        ),
+        'message'     => $summary,
+        'summary'     => $summary,
+        'report_html' => acasa_render_sync_donors_report_html( $results ),
     ] );
 }
 
@@ -959,16 +1063,41 @@ function acasa_ajax_sync_donors() {
  * not in wp_postmeta). Donors with purchase_count > 0 have at least one
  * confirmed donation.
  *
- * @return array{created: int, role_added: int, skipped: int, errors: int}
+ * @return array{
+ *   created:int,
+ *   role_added:int,
+ *   skipped:int,
+ *   errors:int,
+ *   total_donors:int,
+ *   matched:array<int,array<string,mixed>>,
+ *   not_matched:array<int,array<string,mixed>>,
+ *   invalid_email:array<int,array<string,mixed>>,
+ *   error_items:array<int,array<string,mixed>>
+ * }
  */
 function acasa_run_donor_sync(): array {
-    $counts = [ 'created' => 0, 'role_added' => 0, 'skipped' => 0, 'errors' => 0 ];
+    $results = [
+        'created'       => 0,
+        'role_added'    => 0,
+        'skipped'       => 0,
+        'errors'        => 0,
+        'total_donors'  => 0,
+        'matched'       => [],
+        'not_matched'   => [],
+        'invalid_email' => [],
+        'error_items'   => [],
+    ];
 
-    // GiveWP v3+ stores all donor records in give_donors (not wp_postmeta).
-    // purchase_count > 0: GiveWP denormalised counter, incremented on confirm,
-    // decremented on refund/cancel. May drift in some v3 recalculation paths,
-    // but is a reliable enough proxy for "has at least one donation".
     global $wpdb;
+    if ( ! isset( $wpdb->donors ) || ! is_string( $wpdb->donors ) || $wpdb->donors === '' ) {
+        $results['errors']++;
+        $results['error_items'][] = [
+            'scope'   => 'bootstrap',
+            'message' => 'GiveWP donors table is unavailable.',
+        ];
+        return $results;
+    }
+
     // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user-supplied parameters, static query
     $donors = $wpdb->get_results( "
         SELECT id, email, name
@@ -976,46 +1105,266 @@ function acasa_run_donor_sync(): array {
         WHERE purchase_count > 0
           AND email != ''
     " );
+    $results['total_donors'] = is_array( $donors ) ? count( $donors ) : 0;
+
+    if ( ! is_array( $donors ) ) {
+        $results['errors']++;
+        $results['error_items'][] = [
+            'scope'   => 'query',
+            'message' => 'Failed querying donor records.',
+        ];
+        return $results;
+    }
 
     foreach ( $donors as $donor ) {
-        $email = trim( $donor->email );
+        $donor_id = isset( $donor->id ) ? (int) $donor->id : 0;
+        $email    = isset( $donor->email ) ? trim( (string) $donor->email ) : '';
+        $name     = isset( $donor->name ) ? trim( (string) $donor->name ) : '';
 
         if ( ! is_email( $email ) ) {
-            $counts['errors']++;
+            $results['errors']++;
+            $results['invalid_email'][] = [
+                'donor_id' => $donor_id,
+                'email'    => $email,
+                'name'     => $name,
+                'reason'   => 'Invalid email format',
+            ];
             continue;
         }
 
         $existing = get_user_by( 'email', $email );
-
         if ( $existing ) {
-            if ( in_array( 'give_donor', (array) $existing->roles, true ) ) {
-                $counts['skipped']++;
+            $had_role = in_array( 'give_donor', (array) $existing->roles, true );
+            if ( $had_role ) {
+                $results['skipped']++;
             } else {
                 $existing->add_role( 'give_donor' );
-                $counts['role_added']++;
-            }
-            // Ensure GiveWP donor record is linked to the WP user.
-            Give()->donors->update( (int) $donor->id, [ 'user_id' => $existing->ID ] );
-        } else {
-            // Split the full name from give_donors.name into first / last.
-            $full_name  = trim( $donor->name );
-            $space_pos  = strpos( $full_name, ' ' );
-            if ( $space_pos !== false ) {
-                $first_name = substr( $full_name, 0, $space_pos );
-                $last_name  = substr( $full_name, $space_pos + 1 );
-            } else {
-                $first_name = $full_name;
-                $last_name  = '';
+                $results['role_added']++;
             }
 
-            $result = acasa_ensure_donor_wp_user( $email, $first_name, $last_name, (int) $donor->id );
-            if ( is_wp_error( $result ) ) {
-                $counts['errors']++;
+            $link_status = 'linked';
+            $link_mode = null;
+            $link_result = acasa_link_donor_to_user( $donor_id, (int) $existing->ID, $link_mode );
+            if ( is_wp_error( $link_result ) ) {
+                $link_status = 'link_failed';
+                $results['errors']++;
+                $results['error_items'][] = [
+                    'scope'    => 'donor_link',
+                    'donor_id' => $donor_id,
+                    'email'    => $email,
+                    'message'  => $link_result->get_error_message(),
+                ];
             } else {
-                $counts['created']++;
+                $link_status = (string) ( $link_mode ?: 'linked' );
             }
+
+            $results['matched'][] = [
+                'donor_id'    => $donor_id,
+                'email'       => $email,
+                'name'        => $name,
+                'user_id'     => (int) $existing->ID,
+                'role_action' => $had_role ? 'already_had_role' : 'role_added',
+                'link_status' => $link_status,
+            ];
+            continue;
+        }
+
+        $full_name = $name;
+        $space_pos = strpos( $full_name, ' ' );
+        if ( $space_pos !== false ) {
+            $first_name = substr( $full_name, 0, $space_pos );
+            $last_name  = substr( $full_name, $space_pos + 1 );
+        } else {
+            $first_name = $full_name;
+            $last_name  = '';
+        }
+
+        $result = acasa_ensure_donor_wp_user( $email, $first_name, $last_name, $donor_id );
+        if ( is_wp_error( $result ) ) {
+            $results['errors']++;
+            $message = $result->get_error_message();
+            $results['error_items'][] = [
+                'scope'    => 'create_user',
+                'donor_id' => $donor_id,
+                'email'    => $email,
+                'message'  => $message,
+            ];
+            $results['not_matched'][] = [
+                'donor_id'   => $donor_id,
+                'email'      => $email,
+                'name'       => $name,
+                'first_name' => $first_name,
+                'last_name'  => $last_name,
+                'action'     => 'create_failed',
+                'user_id'    => 0,
+                'error'      => $message,
+            ];
+        } else {
+            $results['created']++;
+            $results['not_matched'][] = [
+                'donor_id'   => $donor_id,
+                'email'      => $email,
+                'name'       => $name,
+                'first_name' => $first_name,
+                'last_name'  => $last_name,
+                'action'     => 'created',
+                'user_id'    => (int) $result,
+                'error'      => '',
+            ];
         }
     }
 
-    return $counts;
+    return $results;
+}
+
+/**
+ * Render detailed sync report HTML for the admin page.
+ *
+ * @param array<string,mixed> $results
+ */
+function acasa_render_sync_donors_report_html( array $results ): string {
+    $created      = (int) ( $results['created'] ?? 0 );
+    $role_added   = (int) ( $results['role_added'] ?? 0 );
+    $skipped      = (int) ( $results['skipped'] ?? 0 );
+    $errors       = (int) ( $results['errors'] ?? 0 );
+    $total_donors = (int) ( $results['total_donors'] ?? 0 );
+    $matched      = isset( $results['matched'] ) && is_array( $results['matched'] ) ? $results['matched'] : [];
+    $not_matched  = isset( $results['not_matched'] ) && is_array( $results['not_matched'] ) ? $results['not_matched'] : [];
+    $invalid      = isset( $results['invalid_email'] ) && is_array( $results['invalid_email'] ) ? $results['invalid_email'] : [];
+    $error_items  = isset( $results['error_items'] ) && is_array( $results['error_items'] ) ? $results['error_items'] : [];
+
+    ob_start();
+    ?>
+    <div style="margin-top:16px;">
+        <h2>Summary</h2>
+        <table class="widefat striped" style="max-width:900px;">
+            <tbody>
+                <tr><th>Total eligible GiveWP donors</th><td><?php echo esc_html( (string) $total_donors ); ?></td></tr>
+                <tr><th>Matched to existing WP users</th><td><?php echo esc_html( (string) count( $matched ) ); ?></td></tr>
+                <tr><th>Not matched (create path)</th><td><?php echo esc_html( (string) count( $not_matched ) ); ?></td></tr>
+                <tr><th>Created new users</th><td><?php echo esc_html( (string) $created ); ?></td></tr>
+                <tr><th>Role added on existing users</th><td><?php echo esc_html( (string) $role_added ); ?></td></tr>
+                <tr><th>Skipped (already correct)</th><td><?php echo esc_html( (string) $skipped ); ?></td></tr>
+                <tr><th>Invalid donor emails</th><td><?php echo esc_html( (string) count( $invalid ) ); ?></td></tr>
+                <tr><th>Errors</th><td><?php echo esc_html( (string) $errors ); ?></td></tr>
+            </tbody>
+        </table>
+
+        <h2 style="margin-top:20px;">Detailed report: matched users</h2>
+        <?php if ( empty( $matched ) ) : ?>
+            <p>No matched users found.</p>
+        <?php else : ?>
+            <table class="widefat striped" style="max-width:1200px;">
+                <thead>
+                    <tr>
+                        <th>Donor ID</th>
+                        <th>Email</th>
+                        <th>Name</th>
+                        <th>WP User ID</th>
+                        <th>Role action</th>
+                        <th>Link status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $matched as $row ) : ?>
+                        <tr>
+                            <td><?php echo esc_html( (string) ( $row['donor_id'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['email'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['name'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['user_id'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['role_action'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['link_status'] ?? '' ) ); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <h2 style="margin-top:20px;">Detailed report: not matched users</h2>
+        <?php if ( empty( $not_matched ) ) : ?>
+            <p>No unmatched users found.</p>
+        <?php else : ?>
+            <table class="widefat striped" style="max-width:1200px;">
+                <thead>
+                    <tr>
+                        <th>Donor ID</th>
+                        <th>Email</th>
+                        <th>Name</th>
+                        <th>Parsed first name</th>
+                        <th>Parsed last name</th>
+                        <th>Action</th>
+                        <th>WP User ID</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $not_matched as $row ) : ?>
+                        <tr>
+                            <td><?php echo esc_html( (string) ( $row['donor_id'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['email'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['name'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['first_name'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['last_name'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['action'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['user_id'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['error'] ?? '' ) ); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <h2 style="margin-top:20px;">Invalid donor emails</h2>
+        <?php if ( empty( $invalid ) ) : ?>
+            <p>No invalid emails found.</p>
+        <?php else : ?>
+            <table class="widefat striped" style="max-width:1200px;">
+                <thead>
+                    <tr>
+                        <th>Donor ID</th>
+                        <th>Email</th>
+                        <th>Name</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $invalid as $row ) : ?>
+                        <tr>
+                            <td><?php echo esc_html( (string) ( $row['donor_id'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['email'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['name'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['reason'] ?? '' ) ); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <?php if ( ! empty( $error_items ) ) : ?>
+            <h2 style="margin-top:20px;">Technical errors</h2>
+            <table class="widefat striped" style="max-width:1200px;">
+                <thead>
+                    <tr>
+                        <th>Scope</th>
+                        <th>Donor ID</th>
+                        <th>Email</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $error_items as $row ) : ?>
+                        <tr>
+                            <td><?php echo esc_html( (string) ( $row['scope'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['donor_id'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['email'] ?? '' ) ); ?></td>
+                            <td><?php echo esc_html( (string) ( $row['message'] ?? '' ) ); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+    <?php
+
+    return (string) ob_get_clean();
 }
