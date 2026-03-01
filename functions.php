@@ -1249,7 +1249,7 @@ add_filter('nav_menu_link_attributes', function (array $atts, $item, $args, int 
 /**
  * Render primary account menu item as:
  * - logged out: icon + "Login"
- * - logged in: gravatar + first name (fallback: "Fără nume")
+ * - logged in: local avatar + resolved account label
  *
  * Name label is hidden by CSS when tools collapse.
  */
