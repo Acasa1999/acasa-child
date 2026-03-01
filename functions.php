@@ -5,12 +5,18 @@
  */
 
 add_action('wp_enqueue_scripts', function () {
+    $theme_version = wp_get_theme()->get('Version');
+    $header_v1_css_file = get_stylesheet_directory() . '/header-v1.css';
+    $header_v1_js_file = get_stylesheet_directory() . '/header-v1-mega.js';
+    $header_v1_css_version = file_exists($header_v1_css_file) ? (string) filemtime($header_v1_css_file) : $theme_version;
+    $header_v1_js_version = file_exists($header_v1_js_file) ? (string) filemtime($header_v1_js_file) : $theme_version;
+
     // Always load the child theme stylesheet.
     wp_enqueue_style(
         'acasa-child-style',
         get_stylesheet_uri(),
         [],
-        wp_get_theme()->get('Version')
+        $theme_version
     );
 
     /*
@@ -23,7 +29,15 @@ add_action('wp_enqueue_scripts', function () {
         'acasa-header-v1',
         get_stylesheet_directory_uri() . '/header-v1.css',
         [ 'acasa-child-style' ],
-        wp_get_theme()->get('Version')
+        $header_v1_css_version
+    );
+
+    wp_enqueue_script(
+        'acasa-header-v1-mega',
+        get_stylesheet_directory_uri() . '/header-v1-mega.js',
+        [],
+        $header_v1_js_version,
+        true
     );
 }, 20);
 
@@ -221,10 +235,60 @@ function acasa_is_primary_menu_render_context($args): bool {
 }
 
 /**
- * Build a GenerateBlocks Navigation block payload for the primary menu.
+ * Editable menu-layout post wiring.
+ * - Preferred editor surface is a GeneratePress Element (`gp_elements`).
+ * - Falls back to a private Page if Elements post type is unavailable.
+ * - Menu items still come from Appearance > Menus > Primary.
  */
-function acasa_primary_navigation_block_markup(int $menu_id): string {
-    if ($menu_id <= 0) {
+if (!defined('ACASA_PRIMARY_NAV_LAYOUT_SLUG')) {
+    define('ACASA_PRIMARY_NAV_LAYOUT_SLUG', 'acasa-menu-layout-editor');
+}
+if (!defined('ACASA_PRIMARY_NAV_LAYOUT_TITLE')) {
+    define('ACASA_PRIMARY_NAV_LAYOUT_TITLE', 'ACASA Menu Layout (Element)');
+}
+if (!defined('ACASA_PRIMARY_NAV_LAYOUT_OPTION')) {
+    define('ACASA_PRIMARY_NAV_LAYOUT_OPTION', 'acasa_primary_nav_layout_post_id');
+}
+if (!defined('ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_KEY')) {
+    define('ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_KEY', '_acasa_primary_nav_layout_signature');
+}
+if (!defined('ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_VALUE')) {
+    define('ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_VALUE', 'acasa-primary-nav-layout-v1');
+}
+
+/**
+ * Resolve preferred post type for menu layout editor content.
+ */
+function acasa_primary_navigation_preferred_layout_post_type(): string {
+    return post_type_exists('gp_elements') ? 'gp_elements' : 'page';
+}
+
+/**
+ * Allowed post types for menu layout editor content.
+ *
+ * @return array<int,string>
+ */
+function acasa_primary_navigation_allowed_layout_post_types(): array {
+    return ['gp_elements', 'page'];
+}
+
+/**
+ * Find an existing layout editor post by slug + post type.
+ */
+function acasa_primary_navigation_find_layout_post_id(string $post_type): int {
+    if ($post_type === '' || !post_type_exists($post_type)) {
+        return 0;
+    }
+
+    $existing = get_page_by_path(ACASA_PRIMARY_NAV_LAYOUT_SLUG, OBJECT, $post_type);
+    return $existing instanceof WP_Post ? (int) $existing->ID : 0;
+}
+
+/**
+ * Build default GenerateBlocks Navigation block payload for the primary menu.
+ */
+function acasa_primary_navigation_default_block_markup(int $menu_id): string {
+    if ($menu_id < 0) {
         return '';
     }
 
@@ -237,6 +301,554 @@ function acasa_primary_navigation_block_markup(int $menu_id): string {
         $menu_id
     );
 }
+
+/**
+ * Build stable panel keys from top-level menu item titles.
+ */
+function acasa_menu_item_panel_key($item): string {
+    if (!is_object($item)) {
+        return '';
+    }
+
+    $raw_title = isset($item->title) ? trim((string) $item->title) : '';
+    $panel_key = sanitize_title($raw_title);
+    if ($panel_key !== '') {
+        return $panel_key;
+    }
+
+    if (isset($item->ID) && (int) $item->ID > 0) {
+        return 'item-' . (int) $item->ID;
+    }
+
+    return '';
+}
+
+/**
+ * Build panel definitions from top-level primary menu items.
+ *
+ * @return array<int,array<string,mixed>>
+ */
+function acasa_primary_navigation_panel_items(): array {
+    $menu_id = acasa_primary_menu_term_id();
+    if ($menu_id <= 0) {
+        return [];
+    }
+
+    $menu_items = wp_get_nav_menu_items($menu_id);
+    if (!is_array($menu_items) || $menu_items === []) {
+        return [];
+    }
+
+    $has_children = [];
+    foreach ($menu_items as $menu_item) {
+        if (!is_object($menu_item)) {
+            continue;
+        }
+
+        $parent_id = isset($menu_item->menu_item_parent) ? (int) $menu_item->menu_item_parent : 0;
+        if ($parent_id > 0) {
+            $has_children[$parent_id] = true;
+        }
+    }
+
+    $seen_keys = [];
+    $panels = [];
+
+    foreach ($menu_items as $menu_item) {
+        if (!is_object($menu_item)) {
+            continue;
+        }
+
+        $parent_id = isset($menu_item->menu_item_parent) ? (int) $menu_item->menu_item_parent : 0;
+        if ($parent_id !== 0) {
+            continue;
+        }
+
+        $roles = function_exists('acasa_menu_item_roles')
+            ? acasa_menu_item_roles($menu_item)
+            : [ 'contact' => false, 'account' => false, 'donate' => false, 'tool' => false ];
+
+        if (!empty($roles['tool']) || !empty($roles['donate'])) {
+            continue;
+        }
+
+        $panel_key = acasa_menu_item_panel_key($menu_item);
+        if ($panel_key === '' || isset($seen_keys[$panel_key])) {
+            continue;
+        }
+        $seen_keys[$panel_key] = true;
+
+        $title = isset($menu_item->title) ? trim((string) $menu_item->title) : '';
+        if ($title === '') {
+            $title = ucwords(str_replace('-', ' ', $panel_key));
+        }
+
+        $menu_item_id = isset($menu_item->ID) ? (int) $menu_item->ID : 0;
+        $panels[] = [
+            'key' => $panel_key,
+            'title' => $title,
+            'has_children' => $menu_item_id > 0 && isset($has_children[$menu_item_id]),
+        ];
+    }
+
+    return $panels;
+}
+
+/**
+ * Build deterministic GenerateBlocks unique IDs for menu scaffolding blocks.
+ */
+function acasa_primary_navigation_block_unique_id(string $seed, string $prefix = 'acm'): string {
+    $normalized_prefix = sanitize_key($prefix);
+    if ($normalized_prefix === '') {
+        $normalized_prefix = 'acm';
+    }
+
+    $hash = substr(md5($seed), 0, 8);
+    return substr($normalized_prefix . $hash, 0, 12);
+}
+
+/**
+ * Build editable block markup for one mega panel using GenerateBlocks Grid.
+ */
+function acasa_primary_navigation_panel_markup(array $panel): string {
+    $key = isset($panel['key']) ? sanitize_html_class((string) $panel['key']) : '';
+    if ($key === '') {
+        return '';
+    }
+
+    $title = isset($panel['title']) ? trim((string) $panel['title']) : '';
+    if ($title === '') {
+        $title = ucwords(str_replace('-', ' ', $key));
+    }
+
+    $panel_class = 'acasa-mega-panel acasa-mega-panel-' . $key;
+    $intro = !empty($panel['has_children'])
+        ? 'Edit this submenu panel visually. Use columns, images, text, and links.'
+        : 'Edit this feature panel visually for items without submenu children.';
+
+    $is_programs = ($key === 'programe');
+    $main_width = $is_programs ? 75 : 70;
+    $aside_width = 100 - $main_width;
+    $aside_heading = $is_programs ? 'Other items' : 'Quick links';
+    $aside_list = $is_programs
+        ? '<ul><li>Sanatate</li><li>Educatie</li><li>Proiect C.O.R.E.</li></ul>'
+        : '<ul><li>Add link</li><li>Add link</li><li>Add link</li></ul>';
+
+    $main_cta = $is_programs
+        ? '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"className":"acasa-mega-panel__cta"} --><div class="wp-block-button acasa-mega-panel__cta"><a class="wp-block-button__link wp-element-button" href="#">Comunitatea Britta Sofia</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
+        : '';
+
+    $panel_uid = acasa_primary_navigation_block_unique_id('panel-' . $key, 'amp');
+    $panel_grid_uid = acasa_primary_navigation_block_unique_id('panel-grid-' . $key, 'amg');
+    $main_uid = acasa_primary_navigation_block_unique_id('panel-main-' . $key, 'amm');
+    $aside_uid = acasa_primary_navigation_block_unique_id('panel-aside-' . $key, 'ama');
+
+    return
+        '<!-- wp:generateblocks/container {"uniqueId":"' . esc_attr($panel_uid) . '","isDynamic":true,"blockVersion":3,"isGrid":true,"width":100,"widthTablet":100,"widthMobile":100,"useInnerContainer":false,"className":"' . esc_attr($panel_class) . '"} -->'
+        . '<!-- wp:generateblocks/grid {"uniqueId":"' . esc_attr($panel_grid_uid) . '","isDynamic":true,"blockVersion":3,"horizontalGap":0,"verticalGap":0,"className":"acasa-mega-panel__grid"} -->'
+        . '<!-- wp:generateblocks/container {"uniqueId":"' . esc_attr($main_uid) . '","isDynamic":true,"blockVersion":3,"isGrid":true,"width":' . (int) $main_width . ',"widthTablet":100,"widthMobile":100,"useInnerContainer":false,"className":"acasa-mega-panel__main"} -->'
+        . '<!-- wp:heading {"level":3} --><h3 class="wp-block-heading">' . esc_html($title) . '</h3><!-- /wp:heading -->'
+        . '<!-- wp:paragraph --><p>' . esc_html($intro) . '</p><!-- /wp:paragraph -->'
+        . $main_cta
+        . '<!-- /wp:generateblocks/container -->'
+        . '<!-- wp:generateblocks/container {"uniqueId":"' . esc_attr($aside_uid) . '","isDynamic":true,"blockVersion":3,"isGrid":true,"width":' . (int) $aside_width . ',"widthTablet":100,"widthMobile":100,"useInnerContainer":false,"className":"acasa-mega-panel__aside"} -->'
+        . '<!-- wp:heading {"level":4} --><h4 class="wp-block-heading">' . esc_html($aside_heading) . '</h4><!-- /wp:heading -->'
+        . '<!-- wp:list -->' . $aside_list . '<!-- /wp:list -->'
+        . '<!-- /wp:generateblocks/container -->'
+        . '<!-- /wp:generateblocks/grid -->'
+        . '<!-- /wp:generateblocks/container -->';
+}
+
+/**
+ * Build editable mega shell scaffold markup.
+ */
+function acasa_primary_navigation_mega_shell_markup(): string {
+    $panels = acasa_primary_navigation_panel_items();
+    if ($panels === []) {
+        return '';
+    }
+
+    $panel_markup = '';
+    foreach ($panels as $panel) {
+        $panel_markup .= acasa_primary_navigation_panel_markup($panel);
+    }
+
+    if ($panel_markup === '') {
+        return '';
+    }
+
+    $shell_uid = acasa_primary_navigation_block_unique_id('mega-shell', 'ams');
+    $shell_grid_uid = acasa_primary_navigation_block_unique_id('mega-shell-grid', 'asg');
+
+    return
+        '<!-- wp:generateblocks/container {"uniqueId":"' . esc_attr($shell_uid) . '","isDynamic":true,"blockVersion":3,"useInnerContainer":false,"className":"acasa-mega-shell"} -->'
+        . '<!-- wp:generateblocks/grid {"uniqueId":"' . esc_attr($shell_grid_uid) . '","isDynamic":true,"blockVersion":3,"horizontalGap":0,"verticalGap":0,"className":"acasa-mega-shell__grid"} -->'
+        . $panel_markup
+        . '<!-- /wp:generateblocks/grid -->'
+        . '<!-- /wp:generateblocks/container -->';
+}
+
+/**
+ * Check whether content already contains mega shell scaffolding.
+ */
+function acasa_primary_navigation_has_mega_shell(string $content): bool {
+    return strpos($content, 'acasa-mega-shell') !== false;
+}
+
+/**
+ * Check if a parsed block has a specific class in its className attribute.
+ */
+function acasa_primary_navigation_block_has_class(array $block, string $class_name): bool {
+    if ($class_name === '') {
+        return false;
+    }
+
+    $attrs = isset($block['attrs']) && is_array($block['attrs']) ? $block['attrs'] : [];
+    $class_attr = isset($attrs['className']) ? trim((string) $attrs['className']) : '';
+    if ($class_attr === '') {
+        return false;
+    }
+
+    $classes = preg_split('/\s+/', $class_attr) ?: [];
+    return in_array($class_name, $classes, true);
+}
+
+/**
+ * Remove shell blocks from top-level block list and report shell state.
+ *
+ * @param array<int,array<string,mixed>> $blocks
+ * @return array{blocks:array<int,array<string,mixed>>,has_shell:bool,has_grid_shell:bool}
+ */
+function acasa_primary_navigation_strip_shell_blocks(array $blocks): array {
+    $filtered = [];
+    $has_shell = false;
+    $has_grid_shell = false;
+
+    foreach ($blocks as $block) {
+        if (!is_array($block)) {
+            $filtered[] = $block;
+            continue;
+        }
+
+        if (!acasa_primary_navigation_block_has_class($block, 'acasa-mega-shell')) {
+            $filtered[] = $block;
+            continue;
+        }
+
+        $has_shell = true;
+        $block_name = isset($block['blockName']) ? (string) $block['blockName'] : '';
+        if ($block_name === 'generateblocks/container') {
+            $has_grid_shell = true;
+        }
+    }
+
+    return [
+        'blocks' => $filtered,
+        'has_shell' => $has_shell,
+        'has_grid_shell' => $has_grid_shell,
+    ];
+}
+
+/**
+ * Append or migrate mega shell scaffolding in menu layout content.
+ */
+function acasa_primary_navigation_append_mega_shell_to_content(string $content): string {
+    if (trim($content) === '') {
+        return $content;
+    }
+
+    $shell_markup = acasa_primary_navigation_mega_shell_markup();
+    if ($shell_markup === '') {
+        return $content;
+    }
+
+    $blocks = parse_blocks($content);
+    if (is_array($blocks) && $blocks !== []) {
+        $shell_state = acasa_primary_navigation_strip_shell_blocks($blocks);
+        if (!empty($shell_state['has_grid_shell'])) {
+            return $content;
+        }
+
+        $shell_blocks = parse_blocks($shell_markup);
+        if (!is_array($shell_blocks) || $shell_blocks === []) {
+            return $content;
+        }
+
+        $merged_blocks = array_merge($shell_state['blocks'], $shell_blocks);
+        $serialized = serialize_blocks($merged_blocks);
+        if (is_string($serialized) && trim($serialized) !== '') {
+            return $serialized;
+        }
+
+        return $content;
+    }
+
+    if (acasa_primary_navigation_has_mega_shell($content)) {
+        return $content;
+    }
+
+    return rtrim($content) . "\n\n" . $shell_markup;
+}
+
+/**
+ * Persist mega shell scaffolding into layout post content when missing.
+ */
+function acasa_primary_navigation_ensure_mega_shell_in_post(int $post_id): void {
+    if ($post_id <= 0) {
+        return;
+    }
+
+    $content = (string) get_post_field('post_content', $post_id);
+    if (trim($content) === '') {
+        return;
+    }
+
+    $updated_content = acasa_primary_navigation_append_mega_shell_to_content($content);
+    if ($updated_content === $content) {
+        return;
+    }
+
+    wp_update_post([
+        'ID' => $post_id,
+        'post_content' => $updated_content,
+    ]);
+}
+
+/**
+ * Resolve the editor Element/Page used for visual menu layout editing.
+ */
+function acasa_primary_navigation_layout_post_id(): int {
+    $stored_id = (int) get_option(ACASA_PRIMARY_NAV_LAYOUT_OPTION, 0);
+    if ($stored_id > 0) {
+        $stored_post = get_post($stored_id);
+        if ($stored_post instanceof WP_Post && in_array($stored_post->post_type, acasa_primary_navigation_allowed_layout_post_types(), true)) {
+            return (int) $stored_post->ID;
+        }
+    }
+
+    $preferred_type = acasa_primary_navigation_preferred_layout_post_type();
+    $preferred_id = acasa_primary_navigation_find_layout_post_id($preferred_type);
+    if ($preferred_id > 0) {
+        return $preferred_id;
+    }
+
+    foreach (acasa_primary_navigation_allowed_layout_post_types() as $type) {
+        if ($type === $preferred_type) {
+            continue;
+        }
+
+        $fallback_id = acasa_primary_navigation_find_layout_post_id($type);
+        if ($fallback_id > 0) {
+            return $fallback_id;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Force every GenerateBlocks classic-menu block to use Primary menu term ID.
+ *
+ * @param array<int,array<string,mixed>> $blocks
+ * @return array<int,array<string,mixed>>
+ */
+function acasa_primary_navigation_bind_menu_id(array $blocks, int $menu_id, bool &$found): array {
+    foreach ($blocks as $index => $block) {
+        if (!is_array($block)) {
+            continue;
+        }
+
+        $block_name = isset($block['blockName']) && is_string($block['blockName']) ? $block['blockName'] : '';
+        if ($block_name === 'generateblocks-pro/classic-menu') {
+            $attrs = isset($block['attrs']) && is_array($block['attrs']) ? $block['attrs'] : [];
+            $attrs['menu'] = (string) $menu_id;
+            $block['attrs'] = $attrs;
+            $found = true;
+        }
+
+        if (isset($block['innerBlocks']) && is_array($block['innerBlocks']) && $block['innerBlocks'] !== []) {
+            $block['innerBlocks'] = acasa_primary_navigation_bind_menu_id($block['innerBlocks'], $menu_id, $found);
+        }
+
+        $blocks[$index] = $block;
+    }
+
+    return $blocks;
+}
+
+/**
+ * Load visually-editable menu layout markup from the editor page.
+ */
+function acasa_primary_navigation_editor_markup(int $menu_id): string {
+    if ($menu_id <= 0) {
+        return '';
+    }
+
+    $layout_post_id = acasa_primary_navigation_layout_post_id();
+    if ($layout_post_id <= 0) {
+        return '';
+    }
+
+    $content = (string) get_post_field('post_content', $layout_post_id);
+    if (trim($content) === '') {
+        return '';
+    }
+
+    $content = acasa_primary_navigation_append_mega_shell_to_content($content);
+
+    $blocks = parse_blocks($content);
+    if (!is_array($blocks) || $blocks === []) {
+        return '';
+    }
+
+    $found_classic_menu = false;
+    $blocks = acasa_primary_navigation_bind_menu_id($blocks, $menu_id, $found_classic_menu);
+    if (!$found_classic_menu) {
+        return '';
+    }
+
+    $serialized = serialize_blocks($blocks);
+    return is_string($serialized) ? $serialized : '';
+}
+
+/**
+ * Build GenerateBlocks Navigation block payload for primary menu rendering.
+ * Uses editor-managed layout if present, otherwise falls back to default markup.
+ */
+function acasa_primary_navigation_block_markup(int $menu_id): string {
+    if ($menu_id <= 0) {
+        return '';
+    }
+
+    $editor_markup = acasa_primary_navigation_editor_markup($menu_id);
+    if ($editor_markup !== '') {
+        return $editor_markup;
+    }
+
+    return acasa_primary_navigation_default_block_markup($menu_id);
+}
+
+/**
+ * Ensure visual menu-layout editor Element/Page exists and return its ID.
+ * Never overwrites existing editor content.
+ */
+function acasa_primary_navigation_ensure_layout_post(): int {
+    $preferred_type = acasa_primary_navigation_preferred_layout_post_type();
+    if (!post_type_exists($preferred_type)) {
+        return 0;
+    }
+
+    $existing_id = acasa_primary_navigation_layout_post_id();
+    if ($existing_id > 0) {
+        $existing_post = get_post($existing_id);
+        if ($existing_post instanceof WP_Post && $existing_post->post_type === $preferred_type) {
+            update_option(ACASA_PRIMARY_NAV_LAYOUT_OPTION, $existing_id, false);
+            update_post_meta($existing_id, ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_KEY, ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_VALUE);
+            acasa_primary_navigation_ensure_mega_shell_in_post($existing_id);
+            return $existing_id;
+        }
+    }
+
+    $source_content = '';
+    if ($existing_id > 0) {
+        $source_content = (string) get_post_field('post_content', $existing_id);
+    }
+
+    if (trim($source_content) === '') {
+        $default_menu_id = acasa_primary_menu_term_id();
+        $source_content = acasa_primary_navigation_default_block_markup(max(0, $default_menu_id));
+    }
+
+    $source_content = acasa_primary_navigation_append_mega_shell_to_content($source_content);
+
+    if (trim($source_content) === '') {
+        return 0;
+    }
+
+    $preferred_existing_id = acasa_primary_navigation_find_layout_post_id($preferred_type);
+    if ($preferred_existing_id > 0) {
+        update_option(ACASA_PRIMARY_NAV_LAYOUT_OPTION, $preferred_existing_id, false);
+        update_post_meta($preferred_existing_id, ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_KEY, ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_VALUE);
+
+        $preferred_existing_content = (string) get_post_field('post_content', $preferred_existing_id);
+        if (trim($preferred_existing_content) === '') {
+            wp_update_post([
+                'ID' => $preferred_existing_id,
+                'post_content' => $source_content,
+            ]);
+        }
+
+        if ($preferred_type === 'gp_elements') {
+            update_post_meta($preferred_existing_id, '_generate_element_type', 'block');
+        }
+
+        acasa_primary_navigation_ensure_mega_shell_in_post($preferred_existing_id);
+        return $preferred_existing_id;
+    }
+
+    $created_post_id = wp_insert_post([
+        'post_type' => $preferred_type,
+        'post_status' => $preferred_type === 'gp_elements' ? 'publish' : 'private',
+        'post_title' => ACASA_PRIMARY_NAV_LAYOUT_TITLE,
+        'post_name' => ACASA_PRIMARY_NAV_LAYOUT_SLUG,
+        'post_content' => $source_content,
+        'comment_status' => 'closed',
+        'ping_status' => 'closed',
+    ], true);
+
+    if (is_wp_error($created_post_id) || !is_numeric($created_post_id) || (int) $created_post_id <= 0) {
+        return 0;
+    }
+
+    $created_post_id = (int) $created_post_id;
+    update_option(ACASA_PRIMARY_NAV_LAYOUT_OPTION, $created_post_id, false);
+    update_post_meta($created_post_id, ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_KEY, ACASA_PRIMARY_NAV_LAYOUT_SIGNATURE_VALUE);
+
+    if ($preferred_type === 'gp_elements') {
+        update_post_meta($created_post_id, '_generate_element_type', 'block');
+    }
+
+    acasa_primary_navigation_ensure_mega_shell_in_post($created_post_id);
+    return $created_post_id;
+}
+
+/**
+ * Ensure visual menu-layout editor page exists.
+ * This runs only in wp-admin and never overwrites editor content.
+ */
+add_action('admin_init', function (): void {
+    if (!current_user_can('edit_theme_options')) {
+        return;
+    }
+
+    acasa_primary_navigation_ensure_layout_post();
+});
+
+/**
+ * Add quick access under Appearance for menu visual editor.
+ */
+add_action('admin_menu', function (): void {
+    add_theme_page(
+        'ACASA Menu Element',
+        'ACASA Menu Element',
+        'edit_theme_options',
+        'acasa-menu-layout-editor',
+        function (): void {
+            if (!current_user_can('edit_theme_options')) {
+                wp_die(esc_html__('You do not have permission to access this page.', 'acasa-child'));
+            }
+
+            $layout_post_id = acasa_primary_navigation_ensure_layout_post();
+            $edit_url = $layout_post_id > 0 ? get_edit_post_link($layout_post_id, 'raw') : '';
+            if (is_string($edit_url) && $edit_url !== '') {
+                wp_safe_redirect($edit_url);
+                exit;
+            }
+
+            echo '<div class="wrap"><h1>ACASA Menu Element</h1><p>The menu element editor is not available yet. Reload this page once.</p></div>';
+        }
+    );
+});
 
 /**
  * Replace GP primary menu markup with a GenerateBlocks Navigation block render.
@@ -475,7 +1087,38 @@ add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $de
         $classes[] = 'acasa-menu-item-account';
     }
 
+    if (!$roles['tool'] && !$roles['donate']) {
+        $panel_key = acasa_menu_item_panel_key($item);
+        if ($panel_key !== '') {
+            $panel_class = 'acasa-panel-key-' . $panel_key;
+            if (!in_array($panel_class, $classes, true)) {
+                $classes[] = $panel_class;
+            }
+        }
+    }
+
     return $classes;
+}, 10, 4);
+
+/**
+ * Add top-level panel key data attributes used by mega-panel interactions.
+ */
+add_filter('nav_menu_link_attributes', function (array $atts, $item, $args, int $depth): array {
+    if (!acasa_is_primary_menu_render_context($args) || $depth !== 0 || !is_object($item)) {
+        return $atts;
+    }
+
+    $roles = acasa_menu_item_roles($item);
+    if ($roles['tool'] || $roles['donate']) {
+        return $atts;
+    }
+
+    $panel_key = acasa_menu_item_panel_key($item);
+    if ($panel_key !== '') {
+        $atts['data-acasa-panel-key'] = $panel_key;
+    }
+
+    return $atts;
 }, 10, 4);
 
 /**
