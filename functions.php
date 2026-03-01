@@ -32,13 +32,15 @@ add_action('wp_enqueue_scripts', function () {
         $header_v1_css_version
     );
 
-    wp_enqueue_script(
-        'acasa-header-v1-mega',
-        get_stylesheet_directory_uri() . '/header-v1-mega.js',
-        [],
-        $header_v1_js_version,
-        true
-    );
+    if (acasa_primary_menu_term_id() > 0) {
+        wp_enqueue_script(
+            'acasa-header-v1-mega',
+            get_stylesheet_directory_uri() . '/header-v1-mega.js',
+            [],
+            $header_v1_js_version,
+            true
+        );
+    }
 }, 20);
 
 /**
@@ -647,6 +649,33 @@ function acasa_primary_navigation_layout_post_id(): int {
 }
 
 /**
+ * Versioned cache key space for primary navigation block markup.
+ * Bumped when menu structure or layout post changes.
+ */
+function acasa_primary_navigation_cache_version(): int {
+    return max(1, (int) get_option('acasa_primary_nav_cache_version', 1));
+}
+
+function acasa_primary_navigation_bump_cache_version(): void {
+    update_option('acasa_primary_nav_cache_version', time(), false);
+}
+
+add_action('wp_update_nav_menu', function (): void {
+    acasa_primary_navigation_bump_cache_version();
+});
+
+add_action('save_post', function (int $post_id): void {
+    if ($post_id <= 0 || wp_is_post_revision($post_id)) {
+        return;
+    }
+
+    $layout_post_id = acasa_primary_navigation_layout_post_id();
+    if ($layout_post_id > 0 && $post_id === $layout_post_id) {
+        acasa_primary_navigation_bump_cache_version();
+    }
+}, 10, 1);
+
+/**
  * Force every GenerateBlocks classic-menu block to use Primary menu term ID.
  *
  * @param array<int,array<string,mixed>> $blocks
@@ -720,12 +749,26 @@ function acasa_primary_navigation_block_markup(int $menu_id): string {
         return '';
     }
 
-    $editor_markup = acasa_primary_navigation_editor_markup($menu_id);
-    if ($editor_markup !== '') {
-        return $editor_markup;
+    $layout_post_id = acasa_primary_navigation_layout_post_id();
+    $layout_modified_gmt = $layout_post_id > 0 ? (string) get_post_field('post_modified_gmt', $layout_post_id) : 'none';
+    $cache_version = acasa_primary_navigation_cache_version();
+    $cache_key = 'acasa_nav_markup_' . md5($menu_id . '|' . $layout_post_id . '|' . $layout_modified_gmt . '|' . $cache_version);
+
+    $cached_markup = get_transient($cache_key);
+    if (is_string($cached_markup) && trim($cached_markup) !== '') {
+        return $cached_markup;
     }
 
-    return acasa_primary_navigation_default_block_markup($menu_id);
+    $markup = acasa_primary_navigation_editor_markup($menu_id);
+    if ($markup === '') {
+        $markup = acasa_primary_navigation_default_block_markup($menu_id);
+    }
+
+    if ($markup !== '') {
+        set_transient($cache_key, $markup, 12 * HOUR_IN_SECONDS);
+    }
+
+    return $markup;
 }
 
 /**
