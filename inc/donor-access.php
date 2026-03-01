@@ -326,10 +326,10 @@ add_action( 'personal_options_update',  'acasa_admin_avatar_save' );
 add_action( 'edit_user_profile_update', 'acasa_admin_avatar_save' );
 
 function acasa_admin_avatar_save( int $user_id ) {
-    if (
-        ! isset( $_POST['acasa_avatar_nonce'] ) ||
-        ! wp_verify_nonce( $_POST['acasa_avatar_nonce'], 'acasa_avatar_delete' )
-    ) {
+    $nonce = isset( $_POST['acasa_avatar_nonce'] )
+        ? sanitize_text_field( wp_unslash( $_POST['acasa_avatar_nonce'] ) )
+        : '';
+    if ( $nonce === '' || ! wp_verify_nonce( $nonce, 'acasa_avatar_delete' ) ) {
         return;
     }
     if ( ! current_user_can( 'edit_user', $user_id ) ) {
@@ -470,6 +470,13 @@ function acasa_current_user_is_donor(): bool {
 add_action( 'pre_get_posts', 'acasa_exclude_donatori_from_queries' );
 
 function acasa_exclude_donatori_from_queries( WP_Query $query ) {
+    if ( is_admin() || ! $query->is_main_query() ) {
+        return;
+    }
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        return;
+    }
+
     if ( acasa_current_user_is_donor() ) {
         return;
     }

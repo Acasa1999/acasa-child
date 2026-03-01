@@ -1944,7 +1944,7 @@ function acasa_render_branding_tools_page(): void {
     if (isset($_POST['acasa_branding_action'])) {
         check_admin_referer('acasa_branding_tools');
 
-        $action = sanitize_text_field($_POST['acasa_branding_action']);
+        $action = sanitize_text_field(wp_unslash($_POST['acasa_branding_action']));
 
         try {
             if ($action === 'save_logo_ids') {
@@ -2183,7 +2183,7 @@ function acasa_render_branding_tools_page(): void {
     echo '<h2>Export current settings (read-only)</h2>';
     echo '<p>Copy the JSON below for auditing or migration purposes.</p>';
     echo '<textarea readonly rows="24" style="width:100%;max-width:1200px;font-family:monospace;">';
-    echo $export_json;
+    echo esc_textarea($export_json);
     echo '</textarea>';
 
     echo '<p style="margin-top:12px"><em>Note:</em> After applying branding on a cached site, you may need to purge page/CSS caches (Autoptimize, Cloudflare, server cache) to see changes immediately.</p>';
