@@ -39,7 +39,56 @@
         return '';
     };
 
+    const syncToolsCollapsed = (nav) => {
+        const topList = nav.querySelector(':scope > ul');
+        if (!topList) {
+            return;
+        }
+
+        if (!desktopQuery.matches) {
+            nav.classList.remove('acasa-tools-collapsed');
+            return;
+        }
+
+        const overflowPx = topList.scrollWidth - topList.clientWidth;
+        nav.classList.toggle('acasa-tools-collapsed', overflowPx > 2);
+    };
+
+    const installToolsCollapseWatcher = (nav) => {
+        const topList = nav.querySelector(':scope > ul');
+        if (!topList) {
+            return;
+        }
+
+        let rafId = 0;
+        const requestSync = () => {
+            if (rafId) {
+                return;
+            }
+
+            rafId = window.requestAnimationFrame(() => {
+                rafId = 0;
+                syncToolsCollapsed(nav);
+            });
+        };
+
+        requestSync();
+        window.addEventListener('resize', requestSync);
+
+        if (typeof desktopQuery.addEventListener === 'function') {
+            desktopQuery.addEventListener('change', requestSync);
+        }
+
+        if (typeof ResizeObserver === 'function') {
+            const observer = new ResizeObserver(requestSync);
+            observer.observe(nav);
+            observer.observe(topList);
+        }
+    };
+
     const initNavigation = (nav) => {
+        installToolsCollapseWatcher(nav);
+
         if (!desktopQuery.matches) {
             return;
         }

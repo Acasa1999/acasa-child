@@ -998,6 +998,56 @@ function acasa_primary_menu_semantics(): array {
 }
 
 /**
+ * Resolve account display payload for menu UI.
+ *
+ * @return array{is_logged_in:bool,label:string,avatar_html:string,user_id:int}
+ */
+function acasa_account_display_payload(int $avatar_size = 30, string $avatar_class = 'acasa-account-avatar'): array {
+    $payload = [
+        'is_logged_in' => false,
+        'label' => 'Login',
+        'avatar_html' => '',
+        'user_id' => 0,
+    ];
+
+    if (!is_user_logged_in()) {
+        return $payload;
+    }
+
+    $user = wp_get_current_user();
+    if (!$user instanceof WP_User || (int) $user->ID <= 0) {
+        return $payload;
+    }
+
+    $first_name = trim((string) get_user_meta((int) $user->ID, 'first_name', true));
+    if ($first_name === '') {
+        $first_name = 'Fără nume';
+    }
+
+    $payload['is_logged_in'] = true;
+    $payload['label'] = $first_name;
+    $payload['user_id'] = (int) $user->ID;
+
+    $avatar_markup = get_avatar(
+        (int) $user->ID,
+        max(16, (int) $avatar_size),
+        '',
+        $first_name,
+        [
+            'class' => $avatar_class,
+            'force_display' => true,
+            'extra_attr' => 'loading="eager" decoding="async"',
+        ]
+    );
+
+    if (is_string($avatar_markup) && $avatar_markup !== '') {
+        $payload['avatar_html'] = $avatar_markup;
+    }
+
+    return $payload;
+}
+
+/**
  * Add quick-action icon buttons in mobile header controls.
  * Order in row: Content toggle, optional Contact, optional My Account, Donate.
  * Contact/My Account/Donate presence and URLs mirror primary menu items.
@@ -1019,9 +1069,14 @@ add_action('generate_inside_mobile_menu_control_wrapper', function (): void {
     if (!empty($sem['account']['present'])) {
         $account_url = is_string($sem['account']['url']) && $sem['account']['url'] !== '' ? $sem['account']['url'] : home_url('/panoul-de-control-al-donatorilor/');
         $account_title = is_string($sem['account']['title']) && $sem['account']['title'] !== '' ? $sem['account']['title'] : 'Contul meu';
+        $account_display = acasa_account_display_payload(20, 'acasa-mobile-account-avatar');
         echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--account" href="' . esc_url($account_url) . '" aria-label="' . esc_attr($account_title) . '">';
         echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
-        echo '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
+        if (!empty($account_display['is_logged_in']) && !empty($account_display['avatar_html']) && is_string($account_display['avatar_html'])) {
+            echo $account_display['avatar_html']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        } else {
+            echo '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
+        }
         echo '</span>';
         echo '<span class="screen-reader-text">' . esc_html($account_title) . '</span>';
         echo '</a>';
@@ -1087,6 +1142,13 @@ add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $de
         $classes[] = 'acasa-menu-item-account';
     }
 
+    if ($roles['account']) {
+        $account_state_class = is_user_logged_in() ? 'acasa-account--logged-in' : 'acasa-account--logged-out';
+        if (!in_array($account_state_class, $classes, true)) {
+            $classes[] = $account_state_class;
+        }
+    }
+
     if (!$roles['tool'] && !$roles['donate']) {
         $panel_key = acasa_menu_item_panel_key($item);
         if ($panel_key !== '') {
@@ -1119,6 +1181,37 @@ add_filter('nav_menu_link_attributes', function (array $atts, $item, $args, int 
     }
 
     return $atts;
+}, 10, 4);
+
+/**
+ * Render primary account menu item as:
+ * - logged out: icon + "Login"
+ * - logged in: gravatar + first name (fallback: "Fără nume")
+ *
+ * Name label is hidden by CSS when tools collapse.
+ */
+add_filter('nav_menu_item_title', function (string $title, $item, $args, int $depth): string {
+    if (!acasa_is_primary_menu_render_context($args) || $depth !== 0 || !is_object($item)) {
+        return $title;
+    }
+
+    $roles = acasa_menu_item_roles($item);
+    if (!$roles['account']) {
+        return $title;
+    }
+
+    $account_display = acasa_account_display_payload(30, 'acasa-account-avatar');
+    if (empty($account_display['is_logged_in'])) {
+        return '<span class="acasa-account-label">Login</span>';
+    }
+
+    $avatar_html = (is_string($account_display['avatar_html']) && $account_display['avatar_html'] !== '')
+        ? $account_display['avatar_html']
+        : '<span class="acasa-account-avatar-fallback" aria-hidden="true"></span>';
+
+    return
+        '<span class="acasa-account-avatar-wrap" aria-hidden="true">' . $avatar_html . '</span>'
+        . '<span class="acasa-account-label">' . esc_html((string) $account_display['label']) . '</span>';
 }, 10, 4);
 
 /**
