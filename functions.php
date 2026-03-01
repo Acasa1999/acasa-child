@@ -1019,10 +1019,19 @@ function acasa_account_display_payload(int $avatar_size = 30, string $avatar_cla
         return $payload;
     }
 
-    // Use display_name so wp-admin "Afișează numele ca" is respected.
-    $label = trim( $user->display_name );
+    // Header rule:
+    // - default: first name (or safe fallback),
+    // - manual "Display name publicly as" override: use chosen display_name.
+    $override = (string) get_user_meta( (int) $user->ID, 'acasa_display_name_override', true ) === '1';
+    if ( $override ) {
+        $label = trim( (string) $user->display_name );
+    } else {
+        $label = function_exists( 'acasa_default_account_label' )
+            ? acasa_default_account_label( $user )
+            : trim( (string) get_user_meta( (int) $user->ID, 'first_name', true ) );
+    }
+
     if ( $label === '' || $label === $user->user_email ) {
-        // Fallback: never expose full email in nav UI.
         $label = function_exists( 'acasa_build_display_name' )
             ? acasa_build_display_name(
                 (string) get_user_meta( (int) $user->ID, 'first_name', true ),

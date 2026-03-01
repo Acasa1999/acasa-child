@@ -59,6 +59,70 @@ function acasa_build_display_name( string $first, string $last, string $email = 
 }
 
 /**
+ * Default account label used in header when no manual override exists.
+ *
+ * Priority: first_name -> display_name (if not email) -> privacy-safe fallback.
+ */
+function acasa_default_account_label( WP_User $user ): string {
+    $first = trim( (string) get_user_meta( (int) $user->ID, 'first_name', true ) );
+    if ( $first !== '' ) {
+        return $first;
+    }
+
+    $display = trim( (string) $user->display_name );
+    if ( $display !== '' && $display !== (string) $user->user_email ) {
+        return $display;
+    }
+
+    $fallback = acasa_build_display_name(
+        (string) get_user_meta( (int) $user->ID, 'first_name', true ),
+        (string) get_user_meta( (int) $user->ID, 'last_name', true ),
+        (string) $user->user_email
+    );
+
+    return $fallback !== '' ? $fallback : 'Contul meu';
+}
+
+/**
+ * Mark display_name as manually overridden when user explicitly chooses
+ * something other than the theme default label in profile settings.
+ *
+ * This lets header keep first-name default while honoring deliberate edits.
+ */
+function acasa_track_display_name_override( int $user_id, WP_User $old_user_data ): void {
+    if ( ! current_user_can( 'edit_user', $user_id ) ) {
+        return;
+    }
+
+    if ( ! isset( $_POST['display_name'] ) ) {
+        return;
+    }
+
+    $raw_display_name = wp_unslash( $_POST['display_name'] );
+    $selected_display = sanitize_text_field( (string) $raw_display_name );
+
+    // If display_name was not changed on this profile save, keep prior flag.
+    if ( $selected_display === (string) $old_user_data->display_name ) {
+        return;
+    }
+
+    $user = get_userdata( $user_id );
+    if ( ! $user instanceof WP_User ) {
+        return;
+    }
+
+    $default_label = acasa_default_account_label( $user );
+    $is_manual_override = $selected_display !== '' && $selected_display !== $default_label;
+
+    if ( $is_manual_override ) {
+        update_user_meta( $user_id, 'acasa_display_name_override', '1' );
+    } else {
+        delete_user_meta( $user_id, 'acasa_display_name_override' );
+    }
+}
+add_action( 'profile_update', 'acasa_track_display_name_override', 20, 2 );
+
+/**
  * Check whether a user is allowed to have a custom avatar.
  *
  * Today: give_donor role. Future: add 'volunteer' here.
