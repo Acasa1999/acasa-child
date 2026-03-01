@@ -251,6 +251,83 @@ function acasa_upgrade_email_access_to_wp_session() {
 }
 
 /**
+ * On any logout, fully revoke GiveWP email-access so the session cannot
+ * be re-established from either the give_nl cookie or the original magic
+ * link URL (?give_nl=TOKEN).
+ *
+ * Three things are cleared:
+ *   1. give_nl cookie         — prevents cookie-based re-auth on next request.
+ *   2. give_donors DB columns — clears verify_key and token so the URL token
+ *                               is also invalid; GiveWP validates against these
+ *                               columns, so wiping them makes the magic link
+ *                               URL permanently dead after logout.
+ *   3. In-memory token state  — prevents anything else in this request from
+ *                               re-using the token.
+ *
+ * Two hooks cover all logout paths:
+ *
+ *   wp_logout              — fires for wp-admin logout and donor dashboard REST
+ *                            logout (LogoutRoute). WordPress passes $user_id as
+ *                            the action argument (since WP 5.9), which we use to
+ *                            look up the donor email for the DB query.
+ *
+ *   give_after_user_logout — fires for GiveWP URL logout
+ *                            (?give_action=user_logout), which strips all
+ *                            wp_logout hooks before calling wp_logout(), so
+ *                            wp_logout alone would miss this path. No user_id
+ *                            is passed; we fall back to the email stored on the
+ *                            Give email-access object (set at wp@14 from the
+ *                            give_nl cookie that was present on the request).
+ *
+ * The function is idempotent: safe to fire twice on the same request (REST
+ * logout fires both wp_logout and give_after_user_logout).
+ */
+add_action( 'wp_logout',              'acasa_clear_email_access_on_logout', 10, 1 );
+add_action( 'give_after_user_logout', 'acasa_clear_email_access_on_logout', 10, 0 );
+
+function acasa_clear_email_access_on_logout( $user_id = 0 ) {
+    global $wpdb;
+
+    // 1. Expire the give_nl cookie in the browser.
+    if ( isset( $_COOKIE['give_nl'] ) ) {
+        // phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
+        @setcookie( 'give_nl', '', time() - YEAR_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN, false );
+        unset( $_COOKIE['give_nl'] );
+    }
+
+    // 2. Wipe the DB token so the original magic link URL is also dead.
+    // Resolve donor email: prefer user_id (passed by wp_logout action),
+    // fall back to the email-access object populated at wp@14.
+    $email = '';
+    if ( $user_id ) {
+        $user = get_userdata( (int) $user_id );
+        if ( $user ) {
+            $email = $user->user_email;
+        }
+    }
+    if ( empty( $email ) && Give()->email_access && ! empty( Give()->email_access->token_email ) ) {
+        $email = Give()->email_access->token_email;
+    }
+
+    if ( ! empty( $email ) ) {
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user-supplied table name, $wpdb->donors is a registered property
+        $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$wpdb->donors} SET verify_key = '', token = '' WHERE email = %s LIMIT 1",
+                $email
+            )
+        );
+    }
+
+    // 3. Reset in-memory state so nothing else in this request re-uses the token.
+    if ( Give()->email_access ) {
+        Give()->email_access->token_exists = false;
+        Give()->email_access->token_email  = false;
+        Give()->email_access->token        = false;
+    }
+}
+
+/**
  * Register Tools > Sync Donor Accounts admin page.
  */
 add_action( 'admin_menu', function() {
