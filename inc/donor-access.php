@@ -15,11 +15,6 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-// All hooks below depend on GiveWP. Bail if the plugin is not active.
-if ( ! class_exists( 'Give' ) ) {
-    return;
-}
-
 /* =========================================================================
    Shared helpers
    ========================================================================= */
@@ -128,6 +123,10 @@ add_action( 'profile_update', 'acasa_track_display_name_override', 20, 2 );
  * Today: give_donor role. Future: add 'volunteer' here.
  */
 function acasa_user_can_have_avatar( int $user_id ): bool {
+    if ( ! class_exists( 'Give' ) ) {
+        return false;
+    }
+
     $user = get_userdata( $user_id );
     if ( ! $user ) {
         return false;
@@ -142,6 +141,10 @@ function acasa_user_can_have_avatar( int $user_id ): bool {
  */
 function acasa_get_donor_avatar_id( int $user_id ): int {
     if ( $user_id <= 0 ) {
+        return 0;
+    }
+
+    if ( ! class_exists( 'Give_Donor' ) || ! function_exists( 'Give' ) ) {
         return 0;
     }
 
@@ -335,6 +338,9 @@ function acasa_admin_avatar_save( int $user_id ) {
     if ( ! acasa_user_can_have_avatar( $user_id ) ) {
         return;
     }
+    if ( ! class_exists( 'Give_Donor' ) || ! function_exists( 'Give' ) ) {
+        return;
+    }
 
     $should_delete = isset( $_POST['acasa_avatar_delete'] )
         && '1' === sanitize_text_field( wp_unslash( $_POST['acasa_avatar_delete'] ) );
@@ -357,6 +363,11 @@ function acasa_admin_avatar_save( int $user_id ) {
 
     Give()->donor_meta->update_meta( $donor->id, '_give_donor_avatar_id', '' );
     delete_user_meta( $user_id, 'acasa_avatar_id' );
+}
+
+// Everything below requires GiveWP runtime and data tables.
+if ( ! class_exists( 'Give' ) || ! class_exists( 'Give_Donor' ) || ! function_exists( 'Give' ) ) {
+    return;
 }
 
 /**
