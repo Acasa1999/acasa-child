@@ -2,6 +2,7 @@
 Thumbs.db
 .vscode/
 *.log
+*.phar
 node_modules/
 dist/
 build/
