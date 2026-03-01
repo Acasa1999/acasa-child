@@ -5,15 +5,11 @@ This handoff documents the current implementation state for donor avatar/profile
 
 ## Branch + Current Head
 - Branch: `fix/givewp-avatar-sync`
-- Head commit: `190e32f`
+- Head commit: `03f0134`
 - Repo: `W:\www\acasa\app\public\wp-content\themes\acasa-child`
 
-## Working Tree (Uncommitted)
-- `inc/donor-access.php`
-- `functions.php`
-- Purpose:
-  - preserve donor first-name deletion coming from GiveWP donor dashboard profile edits,
-  - set header fallback label to `Cont` when first name is missing and no manual display-name override exists.
+## Working Tree
+- Status: clean (no uncommitted changes).
 
 ## Goal
 Keep GiveWP donor avatar as the **single canonical source** (`_give_donor_avatar_id`), while:
@@ -22,14 +18,16 @@ Keep GiveWP donor avatar as the **single canonical source** (`_give_donor_avatar
 - keeping avatar upload/change in GiveWP Donor Dashboard only.
 
 ## Commit Timeline (Latest)
-1. `190e32f` chore: align account menu comment with local avatar behavior
-2. `673ed50` perf(nav): cache generated primary nav markup and conditionally load header script
-3. `3bb5143` hardening: scope donor query filter and tighten admin/nonce handling
-4. `6c5c3ef` fix(avatar): keep local avatar fallback active when GiveWP is unavailable
-5. `0b15017` chore(repo): track avatar default asset and ignore phar artifacts
-6. `6e98153` feat(header): first-name default label with manual display-name override tracking
-7. `283ffb2` docs: add avatar sync handoff instructions
-8. `74b9d10` fix(avatar): keep GiveWP as canonical avatar source; WP profile read/delete only
+1. `03f0134` feat: improve donor sync admin reporting and robust donor linking
+2. `8039787` feat: mega-panel toggle, donor name fixes, perf caches, security hardening
+3. `190e32f` chore: align account menu comment with local avatar behavior
+4. `673ed50` perf(nav): cache generated primary nav markup and conditionally load header script
+5. `3bb5143` hardening: scope donor query filter and tighten admin/nonce handling
+6. `6c5c3ef` fix(avatar): keep local avatar fallback active when GiveWP is unavailable
+7. `0b15017` chore(repo): track avatar default asset and ignore phar artifacts
+8. `6e98153` feat(header): first-name default label with manual display-name override tracking
+9. `283ffb2` docs: add avatar sync handoff instructions
+10. `74b9d10` fix(avatar): keep GiveWP as canonical avatar source; WP profile read/delete only
 
 ## Current Behavior
 1. Canonical avatar source is GiveWP donor meta (`_give_donor_avatar_id`).
@@ -43,6 +41,7 @@ Keep GiveWP donor avatar as the **single canonical source** (`_give_donor_avatar
 9. Header label defaults to first name unless user manually changed "Display name publicly as".
 10. If first name is empty and no manual override exists, header label is `Cont`.
 11. Long account labels are truncated in header UI to avoid menu breakage.
+12. Sync Donors admin tool now provides detailed tabular reports and robust donor link fallback when Give donor service is unavailable.
 
 ## Files Changed
 - `inc/donor-access.php`
@@ -50,6 +49,20 @@ Keep GiveWP donor avatar as the **single canonical source** (`_give_donor_avatar
 - `header-v1.css`
 - `.gitignore`
 - `avatar-default.svg`
+
+## Admin Tool Behavior (Sync Donors)
+- Menu placement:
+  - Primary: `ACASA -> Sync Donors`
+  - Fallback: `Tools -> Sync Donor Accounts` (if ACASA menu slug missing)
+- Report sections:
+  - Summary
+  - Matched users
+  - Not matched users
+  - Invalid donor emails
+  - Technical errors
+- Donor linking path:
+  - Primary: `Give()->donors->update(...)`
+  - Fallback: direct SQL update on `{$wpdb->donors}.user_id`
 
 ## Key Anchors
 - `inc/donor-access.php`: functions
