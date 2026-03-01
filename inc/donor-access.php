@@ -56,7 +56,7 @@ function acasa_build_display_name( string $first, string $last, string $email = 
 /**
  * Default account label used in header when no manual override exists.
  *
- * Priority: first_name -> display_name (if not email) -> privacy-safe fallback.
+ * Priority: first_name -> "Cont".
  */
 function acasa_default_account_label( WP_User $user ): string {
     $first = trim( (string) get_user_meta( (int) $user->ID, 'first_name', true ) );
@@ -64,18 +64,7 @@ function acasa_default_account_label( WP_User $user ): string {
         return $first;
     }
 
-    $display = trim( (string) $user->display_name );
-    if ( $display !== '' && $display !== (string) $user->user_email ) {
-        return $display;
-    }
-
-    $fallback = acasa_build_display_name(
-        (string) get_user_meta( (int) $user->ID, 'first_name', true ),
-        (string) get_user_meta( (int) $user->ID, 'last_name', true ),
-        (string) $user->user_email
-    );
-
-    return $fallback !== '' ? $fallback : 'Contul meu';
+    return 'Cont';
 }
 
 /**
@@ -140,6 +129,11 @@ function acasa_user_can_have_avatar( int $user_id ): bool {
  * For compatibility, migrate legacy acasa_avatar_id usermeta to GiveWP once.
  */
 function acasa_get_donor_avatar_id( int $user_id ): int {
+    static $cache = [];
+    if ( isset( $cache[ $user_id ] ) ) {
+        return $cache[ $user_id ];
+    }
+
     if ( $user_id <= 0 ) {
         return 0;
     }
@@ -150,11 +144,13 @@ function acasa_get_donor_avatar_id( int $user_id ): int {
 
     $donor = new Give_Donor( $user_id, true );
     if ( ! $donor || empty( $donor->id ) ) {
+        $cache[ $user_id ] = 0;
         return 0;
     }
 
     $avatar_id = (int) Give()->donor_meta->get_meta( $donor->id, '_give_donor_avatar_id', true );
     if ( $avatar_id > 0 ) {
+        $cache[ $user_id ] = $avatar_id;
         return $avatar_id;
     }
 
@@ -162,9 +158,11 @@ function acasa_get_donor_avatar_id( int $user_id ): int {
     if ( $legacy_avatar_id > 0 ) {
         Give()->donor_meta->update_meta( $donor->id, '_give_donor_avatar_id', $legacy_avatar_id );
         delete_user_meta( $user_id, 'acasa_avatar_id' );
+        $cache[ $user_id ] = $legacy_avatar_id;
         return $legacy_avatar_id;
     }
 
+    $cache[ $user_id ] = 0;
     return 0;
 }
 
@@ -481,14 +479,18 @@ function acasa_exclude_donatori_from_queries( WP_Query $query ) {
         return;
     }
 
-    $donatori = get_category_by_slug( 'donatori' );
-    if ( ! $donatori ) {
-        return; // Category doesn't exist yet — do nothing.
+    static $term_id = null;
+    if ( $term_id === null ) {
+        $donatori = get_category_by_slug( 'donatori' );
+        $term_id = $donatori ? (int) $donatori->term_id : 0;
+    }
+    if ( $term_id <= 0 ) {
+        return;
     }
 
     $excluded = $query->get( 'category__not_in' );
     $excluded = array_values( array_filter( array_map( 'intval', (array) $excluded ) ) );
-    $excluded[] = $donatori->term_id;
+    $excluded[] = $term_id;
     $query->set( 'category__not_in', $excluded );
 }
 
@@ -654,7 +656,7 @@ function acasa_clear_email_access_on_logout( $user_id = 0 ) {
     // 1. Expire the give_nl cookie in the browser.
     if ( isset( $_COOKIE['give_nl'] ) ) {
         // phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
-        @setcookie( 'give_nl', '', time() - YEAR_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN, false );
+        @setcookie( 'give_nl', '', time() - YEAR_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
         unset( $_COOKIE['give_nl'] );
     }
 
@@ -672,7 +674,7 @@ function acasa_clear_email_access_on_logout( $user_id = 0 ) {
         $email = Give()->email_access->token_email;
     }
 
-    if ( ! empty( $email ) ) {
+    if ( ! empty( $email ) && isset( $wpdb->donors ) ) {
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user-supplied table name, $wpdb->donors is a registered property
         $wpdb->query(
             $wpdb->prepare(
@@ -704,6 +706,117 @@ function acasa_clear_email_access_on_logout( $user_id = 0 ) {
  */
 add_action( 'givewp_donor_updated', 'acasa_sync_donor_profile_to_wp', 10, 1 );
 
+/**
+ * Capture donor profile edit intent from GiveWP REST request so empty
+ * first/last names are not lost by GiveWP's strict profile updater.
+ */
+add_filter( 'rest_request_before_callbacks', 'acasa_capture_give_profile_name_intent', 10, 3 );
+
+function acasa_capture_give_profile_name_intent( $response, $handler, WP_REST_Request $request ) {
+    $route = (string) $request->get_route();
+    if ( strpos( $route, '/give-api/v2/donor-dashboard/profile' ) === false ) {
+        return $response;
+    }
+
+    $data = $request->get_param( 'data' );
+    if ( ! is_array( $data ) ) {
+        return $response;
+    }
+
+    if ( ! array_key_exists( 'firstName', $data ) && ! array_key_exists( 'lastName', $data ) ) {
+        return $response;
+    }
+
+    $user_id = get_current_user_id();
+    if ( $user_id <= 0 ) {
+        return $response;
+    }
+
+    $first_name = array_key_exists( 'firstName', $data )
+        ? trim( sanitize_text_field( (string) $data['firstName'] ) )
+        : null;
+    $last_name = array_key_exists( 'lastName', $data )
+        ? trim( sanitize_text_field( (string) $data['lastName'] ) )
+        : null;
+
+    if ( ! isset( $GLOBALS['acasa_give_profile_name_intent'] ) || ! is_array( $GLOBALS['acasa_give_profile_name_intent'] ) ) {
+        $GLOBALS['acasa_give_profile_name_intent'] = [];
+    }
+
+    $GLOBALS['acasa_give_profile_name_intent'][ $user_id ] = [
+        'first_name' => $first_name,
+        'last_name'  => $last_name,
+    ];
+
+    return $response;
+}
+
+/**
+ * Consume and clear pending Give profile name intent for a WP user.
+ *
+ * @return array{first_name:?string,last_name:?string}|null
+ */
+function acasa_take_give_profile_name_intent( int $user_id ): ?array {
+    if ( $user_id <= 0 ) {
+        return null;
+    }
+
+    $all_intents = $GLOBALS['acasa_give_profile_name_intent'] ?? null;
+    if ( ! is_array( $all_intents ) || ! array_key_exists( $user_id, $all_intents ) ) {
+        return null;
+    }
+
+    $intent = $all_intents[ $user_id ];
+    unset( $GLOBALS['acasa_give_profile_name_intent'][ $user_id ] );
+
+    if ( ! is_array( $intent ) ) {
+        return null;
+    }
+
+    return [
+        'first_name' => array_key_exists( 'first_name', $intent ) ? $intent['first_name'] : null,
+        'last_name'  => array_key_exists( 'last_name', $intent ) ? $intent['last_name'] : null,
+    ];
+}
+
+/**
+ * Persist first/last donor names through GiveWP donor meta, including empty
+ * first-name values intentionally submitted from donor dashboard.
+ */
+function acasa_apply_name_intent_to_donor( int $donor_id, ?string $first_name, ?string $last_name ): void {
+    if ( $donor_id <= 0 || ! function_exists( 'Give' ) || ! class_exists( 'Give_Donor' ) ) {
+        return;
+    }
+
+    $current = new Give_Donor( $donor_id );
+    if ( ! $current || empty( $current->id ) ) {
+        return;
+    }
+
+    $resolved_first = $first_name;
+    if ( $resolved_first === null ) {
+        $resolved_first = trim( (string) $current->get_meta( '_give_donor_first_name', true ) );
+    }
+
+    $resolved_last = $last_name;
+    if ( $resolved_last === null ) {
+        $resolved_last = trim( (string) $current->get_meta( '_give_donor_last_name', true ) );
+    }
+
+    $composed_name = trim( $resolved_first . ' ' . $resolved_last );
+    if ( $composed_name !== '' && isset( Give()->donors ) && is_object( Give()->donors ) ) {
+        Give()->donors->update(
+            $donor_id,
+            [
+                'name' => $composed_name,
+            ]
+        );
+    }
+
+    Give()->donor_meta->update_meta( $donor_id, '_give_donor_first_name', $resolved_first );
+    Give()->donor_meta->update_meta( $donor_id, '_give_donor_last_name', $resolved_last );
+}
+
 function acasa_sync_donor_profile_to_wp( $donor ) {
     if ( empty( $donor->userId ) ) {
         return;
@@ -717,6 +830,20 @@ function acasa_sync_donor_profile_to_wp( $donor ) {
     $first = isset( $donor->firstName ) ? trim( (string) $donor->firstName ) : '';
     $last  = isset( $donor->lastName )  ? trim( (string) $donor->lastName )  : '';
     $email = isset( $donor->email )     ? trim( (string) $donor->email )     : '';
+
+    $intent = acasa_take_give_profile_name_intent( (int) $wp_user->ID );
+    if ( is_array( $intent ) ) {
+        if ( array_key_exists( 'first_name', $intent ) && is_string( $intent['first_name'] ) ) {
+            $first = $intent['first_name'];
+        }
+        if ( array_key_exists( 'last_name', $intent ) && is_string( $intent['last_name'] ) ) {
+            $last = $intent['last_name'];
+        }
+
+        if ( ! empty( $donor->id ) ) {
+            acasa_apply_name_intent_to_donor( (int) $donor->id, $first, $last );
+        }
+    }
 
     // Collect only changed fields.
     $update = [ 'ID' => $wp_user->ID ];

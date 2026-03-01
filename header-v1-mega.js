@@ -185,7 +185,7 @@
         });
 
         const previewKey = new URL(window.location.href).searchParams.get('acasaMega');
-        if (previewKey) {
+        if (previewKey && panelMap.has(previewKey)) {
             setActive(previewKey);
         }
     };

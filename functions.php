@@ -4,12 +4,76 @@
  * Managed via Git + Codex.
  */
 
+if (!defined('ACASA_MEGA_PANELS_ENABLED_OPTION')) {
+    define('ACASA_MEGA_PANELS_ENABLED_OPTION', 'acasa_mega_panels_enabled');
+}
+if (!defined('ACASA_MEGA_MENU_ENABLED_OPTION')) {
+    // Backward-compat alias for previously introduced option key.
+    define('ACASA_MEGA_MENU_ENABLED_OPTION', 'acasa_mega_menu_enabled');
+}
+if (!defined('ACASA_ADMIN_MENU_SLUG')) {
+    define('ACASA_ADMIN_MENU_SLUG', 'acasa-admin');
+}
+
+/**
+ * Child-theme setting: enable/disable mega submenu panels only.
+ * - Enabled: panel CSS/JS + GenerateBlocks panel markup override for primary nav.
+ * - Disabled: standard dropdown submenus; ACASA header/icons/donate remain active.
+ */
+function acasa_is_mega_menu_enabled(): bool {
+    $raw = get_option(ACASA_MEGA_PANELS_ENABLED_OPTION, null);
+    if ($raw === null) {
+        // Fallback for legacy key introduced earlier.
+        $raw = get_option(ACASA_MEGA_MENU_ENABLED_OPTION, '1');
+    }
+    $enabled = !in_array((string) $raw, ['0', 'false', 'off', 'no', ''], true);
+    return (bool) apply_filters('acasa_mega_menu_enabled', $enabled);
+}
+
+/**
+ * Normalize checkbox values to stored "1"/"0".
+ *
+ * @param mixed $value
+ */
+function acasa_sanitize_mega_menu_enabled($value): string {
+    return (!empty($value) && (string) $value !== '0') ? '1' : '0';
+}
+
+/**
+ * Mega-panel assets manifest.
+ * Future panel-only assets can be registered via `acasa_mega_panel_assets` filter.
+ *
+ * @return array{styles:array<int,array<string,mixed>>,scripts:array<int,array<string,mixed>>}
+ */
+function acasa_mega_panel_assets(): array {
+    $assets = [
+        'styles' => [
+            [
+                'handle' => 'acasa-header-v1-mega-style',
+                'src' => get_stylesheet_directory_uri() . '/header-v1-mega.css',
+                'deps' => [ 'acasa-header-v1' ],
+                'version' => null,
+                'media' => 'all',
+            ],
+        ],
+        'scripts' => [
+            [
+                'handle' => 'acasa-header-v1-mega',
+                'src' => get_stylesheet_directory_uri() . '/header-v1-mega.js',
+                'deps' => [],
+                'version' => null,
+                'in_footer' => true,
+            ],
+        ],
+    ];
+
+    $filtered = apply_filters('acasa_mega_panel_assets', $assets);
+    return is_array($filtered) ? $filtered : $assets;
+}
+
 add_action('wp_enqueue_scripts', function () {
     $theme_version = wp_get_theme()->get('Version');
-    $header_v1_css_file = get_stylesheet_directory() . '/header-v1.css';
-    $header_v1_js_file = get_stylesheet_directory() . '/header-v1-mega.js';
-    $header_v1_css_version = file_exists($header_v1_css_file) ? (string) filemtime($header_v1_css_file) : $theme_version;
-    $header_v1_js_version = file_exists($header_v1_js_file) ? (string) filemtime($header_v1_js_file) : $theme_version;
+    $asset_version = ( defined( 'WP_DEBUG' ) && WP_DEBUG ) ? (string) time() : $theme_version;
 
     // Always load the child theme stylesheet.
     wp_enqueue_style(
@@ -29,17 +93,41 @@ add_action('wp_enqueue_scripts', function () {
         'acasa-header-v1',
         get_stylesheet_directory_uri() . '/header-v1.css',
         [ 'acasa-child-style' ],
-        $header_v1_css_version
+        $asset_version
     );
 
-    if (acasa_primary_menu_term_id() > 0) {
-        wp_enqueue_script(
-            'acasa-header-v1-mega',
-            get_stylesheet_directory_uri() . '/header-v1-mega.js',
-            [],
-            $header_v1_js_version,
-            true
-        );
+    if (acasa_is_mega_menu_enabled() && acasa_primary_menu_term_id() > 0) {
+        $assets = acasa_mega_panel_assets();
+
+        $styles = isset($assets['styles']) && is_array($assets['styles']) ? $assets['styles'] : [];
+        foreach ($styles as $style) {
+            if (!is_array($style) || empty($style['handle']) || empty($style['src'])) {
+                continue;
+            }
+
+            wp_enqueue_style(
+                (string) $style['handle'],
+                (string) $style['src'],
+                isset($style['deps']) && is_array($style['deps']) ? $style['deps'] : [ 'acasa-header-v1' ],
+                isset($style['version']) ? $style['version'] : $asset_version,
+                isset($style['media']) ? (string) $style['media'] : 'all'
+            );
+        }
+
+        $scripts = isset($assets['scripts']) && is_array($assets['scripts']) ? $assets['scripts'] : [];
+        foreach ($scripts as $script) {
+            if (!is_array($script) || empty($script['handle']) || empty($script['src'])) {
+                continue;
+            }
+
+            wp_enqueue_script(
+                (string) $script['handle'],
+                (string) $script['src'],
+                isset($script['deps']) && is_array($script['deps']) ? $script['deps'] : [],
+                isset($script['version']) ? $script['version'] : $asset_version,
+                isset($script['in_footer']) ? (bool) $script['in_footer'] : true
+            );
+        }
     }
 }, 20);
 
@@ -125,6 +213,12 @@ add_filter('generate_logo_output', function ($html) {
         return $html;
     }
 
+    static $cache = [];
+    $cache_key = md5($html);
+    if (isset($cache[$cache_key])) {
+        return $cache[$cache_key];
+    }
+
     $attrs = [
         'src' => false,
         'data-src' => false,
@@ -165,6 +259,7 @@ add_filter('generate_logo_output', function ($html) {
         $html = preg_replace('/\bfetchpriority=(["\']).*?\1/i', 'fetchpriority="high"', $html);
     }
 
+    $cache[$cache_key] = $html;
     return $html;
 }, 20);
 
@@ -182,12 +277,19 @@ add_filter('generate_menu_bar_items', '__return_empty_string');
  * Resolve the term ID assigned to the primary menu location.
  */
 function acasa_primary_menu_term_id(): int {
-    $locations = get_nav_menu_locations();
-    if (!is_array($locations) || !isset($locations['primary'])) {
-        return 0;
+    static $id = null;
+    if ($id !== null) {
+        return $id;
     }
 
-    return (int) $locations['primary'];
+    $locations = get_nav_menu_locations();
+    if (!is_array($locations) || !isset($locations['primary'])) {
+        $id = 0;
+        return $id;
+    }
+
+    $id = (int) $locations['primary'];
+    return $id;
 }
 
 /**
@@ -235,6 +337,99 @@ function acasa_is_primary_menu_render_context($args): bool {
 
     return isset($args->menu) && acasa_menu_is_primary($args->menu);
 }
+
+/**
+ * Register child-theme header settings.
+ */
+add_action('admin_init', function (): void {
+    register_setting(
+        'acasa-header-settings',
+        ACASA_MEGA_PANELS_ENABLED_OPTION,
+        [
+            'type' => 'string',
+            'sanitize_callback' => 'acasa_sanitize_mega_menu_enabled',
+            'default' => '1',
+        ]
+    );
+});
+
+/**
+ * Render ACASA header settings page.
+ */
+function acasa_render_header_settings_page(): void {
+    if (!current_user_can('manage_options')) {
+        wp_die(esc_html__('You do not have permission to access this page.', 'acasa-child'));
+    }
+
+    $enabled = acasa_is_mega_menu_enabled();
+    $menu_editor_url = admin_url('admin.php?page=acasa-menu-layout-editor');
+    $branding_url = admin_url('admin.php?page=acasa-branding');
+
+    echo '<div class="wrap">';
+    echo '<h1>ACASA</h1>';
+    echo '<form method="post" action="options.php">';
+    settings_fields('acasa-header-settings');
+    echo '<table class="form-table" role="presentation"><tbody>';
+    echo '<tr>';
+    echo '<th scope="row">Enable Mega Submenu Panels</th>';
+    echo '<td>';
+    echo '<label>';
+    echo '<input type="hidden" name="' . esc_attr(ACASA_MEGA_PANELS_ENABLED_OPTION) . '" value="0" />';
+    echo '<input type="checkbox" name="' . esc_attr(ACASA_MEGA_PANELS_ENABLED_OPTION) . '" value="1" ' . checked(true, $enabled, false) . ' />';
+    echo ' Load desktop mega submenu panels and panel-only assets';
+    echo '</label>';
+    echo '<p class="description">When disabled, only mega panel behavior is removed (panel markup override, panel CSS, panel JS). Core ACASA header/menu styling, icons, and donate logic remain active.</p>';
+    echo '</td>';
+    echo '</tr>';
+    echo '</tbody></table>';
+    submit_button('Save Changes');
+    echo '</form>';
+    echo '<p><a class="button button-secondary" href="' . esc_url($menu_editor_url) . '">Open ACASA Menu Element Editor</a></p>';
+    echo '<p><a class="button button-secondary" href="' . esc_url($branding_url) . '">Open ACASA Branding Tool</a></p>';
+    echo '</div>';
+}
+
+/**
+ * Single ACASA admin menu, grouping all child-theme tools.
+ */
+add_action('admin_menu', function (): void {
+    add_menu_page(
+        'ACASA',
+        'ACASA',
+        'manage_options',
+        ACASA_ADMIN_MENU_SLUG,
+        'acasa_render_header_settings_page',
+        'dashicons-admin-home',
+        58
+    );
+
+    add_submenu_page(
+        ACASA_ADMIN_MENU_SLUG,
+        'ACASA',
+        'Settings',
+        'manage_options',
+        ACASA_ADMIN_MENU_SLUG,
+        'acasa_render_header_settings_page'
+    );
+
+    add_submenu_page(
+        ACASA_ADMIN_MENU_SLUG,
+        'ACASA Menu Element',
+        'Menu Element',
+        'manage_options',
+        'acasa-menu-layout-editor',
+        'acasa_render_menu_layout_editor_page'
+    );
+
+    add_submenu_page(
+        ACASA_ADMIN_MENU_SLUG,
+        'ACASA Branding',
+        'Branding',
+        'manage_options',
+        'acasa-branding',
+        'acasa_render_branding_tools_page'
+    );
+});
 
 /**
  * Editable menu-layout post wiring.
@@ -331,14 +526,26 @@ function acasa_menu_item_panel_key($item): string {
  * @return array<int,array<string,mixed>>
  */
 function acasa_primary_navigation_panel_items(): array {
+    static $panels = null;
+    if ($panels !== null) {
+        return $panels;
+    }
+
+    if (!acasa_is_mega_menu_enabled()) {
+        $panels = [];
+        return $panels;
+    }
+
     $menu_id = acasa_primary_menu_term_id();
     if ($menu_id <= 0) {
-        return [];
+        $panels = [];
+        return $panels;
     }
 
     $menu_items = wp_get_nav_menu_items($menu_id);
     if (!is_array($menu_items) || $menu_items === []) {
-        return [];
+        $panels = [];
+        return $panels;
     }
 
     $has_children = [];
@@ -555,6 +762,10 @@ function acasa_primary_navigation_strip_shell_blocks(array $blocks): array {
  * Append or migrate mega shell scaffolding in menu layout content.
  */
 function acasa_primary_navigation_append_mega_shell_to_content(string $content): string {
+    if (!acasa_is_mega_menu_enabled()) {
+        return $content;
+    }
+
     if (trim($content) === '') {
         return $content;
     }
@@ -620,18 +831,25 @@ function acasa_primary_navigation_ensure_mega_shell_in_post(int $post_id): void 
  * Resolve the editor Element/Page used for visual menu layout editing.
  */
 function acasa_primary_navigation_layout_post_id(): int {
+    static $post_id = null;
+    if ($post_id !== null) {
+        return $post_id;
+    }
+
     $stored_id = (int) get_option(ACASA_PRIMARY_NAV_LAYOUT_OPTION, 0);
     if ($stored_id > 0) {
         $stored_post = get_post($stored_id);
         if ($stored_post instanceof WP_Post && in_array($stored_post->post_type, acasa_primary_navigation_allowed_layout_post_types(), true)) {
-            return (int) $stored_post->ID;
+            $post_id = (int) $stored_post->ID;
+            return $post_id;
         }
     }
 
     $preferred_type = acasa_primary_navigation_preferred_layout_post_type();
     $preferred_id = acasa_primary_navigation_find_layout_post_id($preferred_type);
     if ($preferred_id > 0) {
-        return $preferred_id;
+        $post_id = $preferred_id;
+        return $post_id;
     }
 
     foreach (acasa_primary_navigation_allowed_layout_post_types() as $type) {
@@ -641,11 +859,13 @@ function acasa_primary_navigation_layout_post_id(): int {
 
         $fallback_id = acasa_primary_navigation_find_layout_post_id($type);
         if ($fallback_id > 0) {
-            return $fallback_id;
+            $post_id = $fallback_id;
+            return $post_id;
         }
     }
 
-    return 0;
+    $post_id = 0;
+    return $post_id;
 }
 
 /**
@@ -860,6 +1080,10 @@ function acasa_primary_navigation_ensure_layout_post(): int {
  * This runs only in wp-admin and never overwrites editor content.
  */
 add_action('admin_init', function (): void {
+    if (!acasa_is_mega_menu_enabled()) {
+        return;
+    }
+
     if (!current_user_can('edit_theme_options')) {
         return;
     }
@@ -868,36 +1092,38 @@ add_action('admin_init', function (): void {
 });
 
 /**
- * Add quick access under Appearance for menu visual editor.
+ * Render ACASA Menu Element admin page.
  */
-add_action('admin_menu', function (): void {
-    add_theme_page(
-        'ACASA Menu Element',
-        'ACASA Menu Element',
-        'edit_theme_options',
-        'acasa-menu-layout-editor',
-        function (): void {
-            if (!current_user_can('edit_theme_options')) {
-                wp_die(esc_html__('You do not have permission to access this page.', 'acasa-child'));
-            }
+function acasa_render_menu_layout_editor_page(): void {
+    if (!current_user_can('manage_options')) {
+        wp_die(esc_html__('You do not have permission to access this page.', 'acasa-child'));
+    }
 
-            $layout_post_id = acasa_primary_navigation_ensure_layout_post();
-            $edit_url = $layout_post_id > 0 ? get_edit_post_link($layout_post_id, 'raw') : '';
-            if (is_string($edit_url) && $edit_url !== '') {
-                wp_safe_redirect($edit_url);
-                exit;
-            }
+    if (!acasa_is_mega_menu_enabled()) {
+        $settings_url = admin_url('admin.php?page=' . ACASA_ADMIN_MENU_SLUG);
+        echo '<div class="wrap"><h1>ACASA Menu Element</h1><p>Mega submenu panels are disabled. Enable them in <a href="' . esc_url($settings_url) . '">ACASA -> Settings</a> to edit panel layouts.</p></div>';
+        return;
+    }
 
-            echo '<div class="wrap"><h1>ACASA Menu Element</h1><p>The menu element editor is not available yet. Reload this page once.</p></div>';
-        }
-    );
-});
+    $layout_post_id = acasa_primary_navigation_ensure_layout_post();
+    $edit_url = $layout_post_id > 0 ? get_edit_post_link($layout_post_id, 'raw') : '';
+    if (is_string($edit_url) && $edit_url !== '') {
+        wp_safe_redirect($edit_url);
+        exit;
+    }
+
+    echo '<div class="wrap"><h1>ACASA Menu Element</h1><p>The menu element editor is not available yet. Reload this page once.</p></div>';
+}
 
 /**
  * Replace GP primary menu markup with a GenerateBlocks Navigation block render.
  * This keeps the existing Primary menu data source while enabling block-based nav.
  */
 add_filter('wp_nav_menu', function (string $nav_menu, $args): string {
+    if (!acasa_is_mega_menu_enabled()) {
+        return $nav_menu;
+    }
+
     if (
         is_admin()
         || !is_object($args)
@@ -1046,6 +1272,12 @@ function acasa_primary_menu_semantics(): array {
  * @return array{is_logged_in:bool,label:string,avatar_html:string,user_id:int}
  */
 function acasa_account_display_payload(int $avatar_size = 30, string $avatar_class = 'acasa-account-avatar'): array {
+    static $cache = [];
+    $cache_key = $avatar_size . '|' . $avatar_class;
+    if (isset($cache[$cache_key])) {
+        return $cache[$cache_key];
+    }
+
     $payload = [
         'is_logged_in' => false,
         'label' => 'Login',
@@ -1054,11 +1286,13 @@ function acasa_account_display_payload(int $avatar_size = 30, string $avatar_cla
     ];
 
     if (!is_user_logged_in()) {
+        $cache[$cache_key] = $payload;
         return $payload;
     }
 
     $user = wp_get_current_user();
     if (!$user instanceof WP_User || (int) $user->ID <= 0) {
+        $cache[$cache_key] = $payload;
         return $payload;
     }
 
@@ -1075,16 +1309,10 @@ function acasa_account_display_payload(int $avatar_size = 30, string $avatar_cla
     }
 
     if ( $label === '' || $label === $user->user_email ) {
-        $label = function_exists( 'acasa_build_display_name' )
-            ? acasa_build_display_name(
-                (string) get_user_meta( (int) $user->ID, 'first_name', true ),
-                (string) get_user_meta( (int) $user->ID, 'last_name', true ),
-                $user->user_email
-            )
-            : 'Contul meu';
+        $label = 'Cont';
     }
     if ( $label === '' ) {
-        $label = 'Contul meu';
+        $label = 'Cont';
     }
 
     $payload['is_logged_in'] = true;
@@ -1107,6 +1335,7 @@ function acasa_account_display_payload(int $avatar_size = 30, string $avatar_cla
         $payload['avatar_html'] = $avatar_markup;
     }
 
+    $cache[$cache_key] = $payload;
     return $payload;
 }
 
@@ -1136,7 +1365,7 @@ add_action('generate_inside_mobile_menu_control_wrapper', function (): void {
         echo '<a class="acasa-mobile-quick-link acasa-mobile-quick-link--account" href="' . esc_url($account_url) . '" aria-label="' . esc_attr($account_title) . '">';
         echo '<span class="acasa-mobile-quick-link__icon" aria-hidden="true">';
         if (!empty($account_display['is_logged_in']) && !empty($account_display['avatar_html']) && is_string($account_display['avatar_html'])) {
-            echo $account_display['avatar_html']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            echo wp_kses_post( $account_display['avatar_html'] );
         } else {
             echo '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
         }
@@ -1212,7 +1441,7 @@ add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $de
         }
     }
 
-    if (!$roles['tool'] && !$roles['donate']) {
+    if (acasa_is_mega_menu_enabled() && !$roles['tool'] && !$roles['donate']) {
         $panel_key = acasa_menu_item_panel_key($item);
         if ($panel_key !== '') {
             $panel_class = 'acasa-panel-key-' . $panel_key;
@@ -1229,6 +1458,10 @@ add_filter('nav_menu_css_class', function (array $classes, $item, $args, int $de
  * Add top-level panel key data attributes used by mega-panel interactions.
  */
 add_filter('nav_menu_link_attributes', function (array $atts, $item, $args, int $depth): array {
+    if (!acasa_is_mega_menu_enabled()) {
+        return $atts;
+    }
+
     if (!acasa_is_primary_menu_render_context($args) || $depth !== 0 || !is_object($item)) {
         return $atts;
     }
@@ -1269,7 +1502,7 @@ add_filter('nav_menu_item_title', function (string $title, $item, $args, int $de
     }
 
     $avatar_html = (is_string($account_display['avatar_html']) && $account_display['avatar_html'] !== '')
-        ? $account_display['avatar_html']
+        ? wp_kses_post( $account_display['avatar_html'] )
         : '<span class="acasa-account-avatar-fallback" aria-hidden="true"></span>';
 
     return
@@ -1346,22 +1579,12 @@ add_filter('wp_nav_menu_items', function (string $items, $args): string {
 
 /* ============================================================================
    ACASA Branding Tool (Option B: DB seeder + snapshot + rollback)
-   - Tools → ACASA Branding
+   - ACASA -> Branding
    - Dry run, Apply (safe), Apply (force), Snapshot, Rollback
 ============================================================================ */
 
-add_action('admin_menu', function () {
-    add_management_page(
-        'ACASA Branding',
-        'ACASA Branding',
-        'manage_options',
-        'acasa-branding',
-        'acasa_render_branding_tools_page'
-    );
-});
-
 add_action('admin_enqueue_scripts', function (string $hook_suffix): void {
-    if ($hook_suffix === 'tools_page_acasa-branding') {
+    if (strpos($hook_suffix, 'acasa-branding') !== false) {
         wp_enqueue_media();
     }
 });
