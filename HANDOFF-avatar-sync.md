@@ -17,6 +17,16 @@ Keep GiveWP donor avatar as the **single canonical source** (`_give_donor_avatar
 - keeping WP profile as **read/delete only** (no upload/change there),
 - keeping avatar upload/change in GiveWP Donor Dashboard only.
 
+## Priority Alert (2026-03-02)
+P0 for next release:
+- Fix donor-to-WP relinking side effect when a logged-in donor donates with an alternate email.
+- Current risk: `acasa_on_donation_confirmed()` -> `acasa_ensure_donor_wp_user()` can reassign `give_donors.user_id` based on payment email, even when donor is already linked.
+- Required direction:
+  1. Preserve stable donor ownership link once set.
+  2. Do not auto-relink linked donors by alternate checkout email.
+  3. Only create/link WP user automatically when donor has no linked `user_id`.
+  4. Log/report conflict when checkout email points to a different WP user than donor-linked user.
+
 ## Commit Timeline (Latest)
 1. `03f0134` feat: improve donor sync admin reporting and robust donor linking
 2. `8039787` feat: mega-panel toggle, donor name fixes, perf caches, security hardening
