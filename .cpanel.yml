@@ -1,0 +1,6 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/asocia12aca/q.asociatiaacasa.ro/wp-content/themes/acasa-child/
+    - /bin/rm -rf $DEPLOYPATH/*
+    - /bin/cp -R * $DEPLOYPATH
