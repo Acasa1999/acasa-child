@@ -507,6 +507,51 @@ function acasa_avatar_upload_preflight( $response, $handler, WP_REST_Request $re
     return $response;
 }
 
+/**
+ * Normalize GiveWP profile payload when avatar upload failed for a known reason.
+ *
+ * Injects current avatarId to prevent Undefined property warnings in GiveWP
+ * ProfileRoute. Only injects when the failure cause is known (preflight
+ * cleared stale ref or size exceeded). Unknown failures are left untouched
+ * so the warning surfaces for investigation.
+ */
+add_filter( 'rest_request_before_callbacks', 'acasa_profile_payload_normalize', 10, 3 );
+
+function acasa_profile_payload_normalize( $response, $handler, WP_REST_Request $request ) {
+    $route = (string) $request->get_route();
+    if ( strpos( $route, '/give-api/v2/donor-dashboard/profile' ) === false ) {
+        return $response;
+    }
+
+    $user_id = get_current_user_id();
+    if ( $user_id <= 0 ) {
+        return $response;
+    }
+
+    // Only act if we know the avatar failure was from our preflight or size guard.
+    $known_failure = isset( $GLOBALS['acasa_avatar_preflight'][ $user_id ] );
+    if ( ! $known_failure ) {
+        return $response;
+    }
+
+    $data = $request->get_param( 'data' );
+    if ( ! is_array( $data ) || array_key_exists( 'avatarId', $data ) ) {
+        return $response;
+    }
+
+    // Inject current donor avatar ID (may be 0 after preflight cleared it).
+    if ( class_exists( 'Give_Donor' ) && function_exists( 'Give' ) ) {
+        $donor = new Give_Donor( $user_id, true );
+        if ( $donor && ! empty( $donor->id ) ) {
+            $current_id = (int) Give()->donor_meta->get_meta( $donor->id, '_give_donor_avatar_id', true );
+            $data['avatarId'] = $current_id;
+            $request->set_param( 'data', $data );
+        }
+    }
+
+    return $response;
+}
+
 // Everything below requires GiveWP runtime and data tables.
 if ( ! class_exists( 'Give' ) || ! class_exists( 'Give_Donor' ) || ! function_exists( 'Give' ) ) {
     return;
