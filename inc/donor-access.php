@@ -392,6 +392,121 @@ function acasa_admin_avatar_save( int $user_id ) {
     delete_user_meta( $user_id, 'acasa_avatar_id' );
 }
 
+/* =========================================================================
+   Avatar upload guards (REST preflight)
+   ========================================================================= */
+
+/**
+ * Preflight checks on GiveWP avatar upload route.
+ *
+ * Runs before GiveWP's own callback via rest_request_before_callbacks.
+ * Clears stale/orphan/mismatched avatar meta so GiveWP's ownership
+ * check does not reject a legitimate upload.
+ * Also catches oversized uploads before they reach GiveWP.
+ */
+add_filter( 'rest_request_before_callbacks', 'acasa_avatar_upload_preflight', 10, 3 );
+
+function acasa_avatar_upload_preflight( $response, $handler, WP_REST_Request $request ) {
+    $route = (string) $request->get_route();
+
+    // Only act on avatar upload route.
+    if ( strpos( $route, '/give-api/v2/donor-dashboard/avatar' ) === false ) {
+        return $response;
+    }
+
+    $user_id = get_current_user_id();
+    if ( $user_id <= 0 ) {
+        return $response;
+    }
+
+    // --- Upload size guard ---
+    $content_length = isset( $_SERVER['CONTENT_LENGTH'] ) ? (int) $_SERVER['CONTENT_LENGTH'] : 0;
+    $max_upload     = wp_max_upload_size();
+
+    if ( $content_length > 0 && empty( $_FILES ) ) {
+        $max_mb = round( $max_upload / ( 1024 * 1024 ), 1 );
+        acasa_donor_diag( 'avatar-size-rejected', [
+            'user_id'        => $user_id,
+            'content_length' => $content_length,
+            'max_upload'     => $max_upload,
+        ] );
+        return new WP_Error(
+            'acasa_upload_too_large',
+            sprintf(
+                'Imaginea este prea mare. Dimensiunea maxima permisa este %s MB.',
+                $max_mb
+            ),
+            [ 'status' => 413 ]
+        );
+    }
+
+    // --- Avatar meta preflight (clear stale references) ---
+    if ( ! class_exists( 'Give_Donor' ) || ! function_exists( 'Give' ) ) {
+        return $response;
+    }
+
+    $donor = new Give_Donor( $user_id, true );
+    if ( ! $donor || empty( $donor->id ) ) {
+        return $response;
+    }
+
+    // Verify donor's linked user matches current user (strict identity binding).
+    $donor_user_id = isset( $donor->user_id ) ? (int) $donor->user_id : 0;
+    if ( $donor_user_id !== $user_id ) {
+        return $response;
+    }
+
+    $avatar_id = (int) Give()->donor_meta->get_meta( $donor->id, '_give_donor_avatar_id', true );
+    if ( $avatar_id <= 0 ) {
+        return $response;
+    }
+
+    $should_clear = false;
+    $reason       = '';
+
+    // Check 1: attachment post missing.
+    if ( ! get_post( $avatar_id ) ) {
+        $should_clear = true;
+        $reason       = 'attachment_missing';
+    }
+
+    // Check 2: attachment exists but file on disk is missing.
+    if ( ! $should_clear ) {
+        $file_path = get_attached_file( $avatar_id );
+        if ( ! $file_path || ! file_exists( $file_path ) ) {
+            $should_clear = true;
+            $reason       = 'file_missing';
+        }
+    }
+
+    // Check 3: attachment owner mismatch.
+    if ( ! $should_clear ) {
+        $post_author = (int) get_post_field( 'post_author', $avatar_id );
+        if ( $post_author !== $user_id ) {
+            $should_clear = true;
+            $reason       = 'owner_mismatch';
+        }
+    }
+
+    if ( $should_clear ) {
+        Give()->donor_meta->update_meta( $donor->id, '_give_donor_avatar_id', '' );
+        acasa_donor_diag( 'avatar-preflight-cleared', [
+            'donor_id'  => $donor->id,
+            'user_id'   => $user_id,
+            'avatar_id' => $avatar_id,
+            'reason'    => $reason,
+        ] );
+
+        // Store reason so profile normalization shim knows the cause.
+        if ( ! isset( $GLOBALS['acasa_avatar_preflight'] ) ) {
+            $GLOBALS['acasa_avatar_preflight'] = [];
+        }
+        $GLOBALS['acasa_avatar_preflight'][ $user_id ] = $reason;
+    }
+
+    return $response;
+}
+
 // Everything below requires GiveWP runtime and data tables.
 if ( ! class_exists( 'Give' ) || ! class_exists( 'Give_Donor' ) || ! function_exists( 'Give' ) ) {
     return;
