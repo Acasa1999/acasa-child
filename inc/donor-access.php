@@ -16,6 +16,35 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /* =========================================================================
+   Diagnostic logging
+   ========================================================================= */
+
+/**
+ * Log a donor-access diagnostic message.
+ *
+ * Only logs when ACASA_DONOR_DIAG is truthy. Minimizes PII:
+ * emails are hashed (first 8 chars of SHA-256) + domain.
+ *
+ * @param string $tag     Short label (e.g. 'avatar-preflight', 'donation-confirmed').
+ * @param array  $context Key-value data. Keys named '*_email' are auto-hashed.
+ */
+function acasa_donor_diag( string $tag, array $context = [] ): void {
+    if ( empty( $_SERVER['ACASA_DONOR_DIAG'] ) && ! ( defined( 'ACASA_DONOR_DIAG' ) && ACASA_DONOR_DIAG ) ) {
+        return;
+    }
+
+    foreach ( $context as $key => $value ) {
+        if ( str_ends_with( $key, '_email' ) && is_string( $value ) && $value !== '' ) {
+            $domain = strstr( $value, '@' );
+            $hash   = substr( hash( 'sha256', strtolower( trim( $value ) ) ), 0, 8 );
+            $context[ $key ] = $hash . ( $domain ?: '@?' );
+        }
+    }
+
+    error_log( '[acasa-donor-diag][' . $tag . '] ' . wp_json_encode( $context ) );
+}
+
+/* =========================================================================
    Shared helpers
    ========================================================================= */
 
