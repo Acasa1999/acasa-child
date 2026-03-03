@@ -469,7 +469,7 @@ Logs conflicts with hashed email + domain."
 ## Task 6: Implementation report + child theme complete
 
 **Files:**
-- Create: `acasa-child/reports/donor-hardening-implementation.md`
+- Create: `acasa-child/reports/completed-donor-hardening-implementation.md`
 
 **Step 1: Write the report**
 
@@ -623,7 +623,7 @@ Visit `http://acasa.local/wp-admin/admin.php?page=acasa-donor-health`, click "Ru
 ## Task 11: Plugin implementation report
 
 **Files:**
-- Create: `acasa-data-tools/reports/donor-health-implementation.md`
+- Create: `acasa-data-tools/reports/completed-donor-health-implementation.md`
 
 **Step 1: Write report summarizing Part 2 implementation**
 

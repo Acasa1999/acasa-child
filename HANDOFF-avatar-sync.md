@@ -106,7 +106,7 @@ P0 for next release:
 
 ## Related Docs
 - `W:\www\acasa\app\public\sources\donor-access-design.md`
-- `W:\www\acasa\app\public\sources\donor-acces-implementation-plan.md`
+- `W:\www\acasa\app\public\sources\donor-access-implementation-plan.md`
 
 ## Validation Checklist
 1. Donor uploads avatar in GiveWP Donor Dashboard.
