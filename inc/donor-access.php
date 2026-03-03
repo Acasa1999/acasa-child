@@ -675,28 +675,126 @@ function acasa_ensure_donor_wp_user( $email, $first_name = '', $last_name = '', 
 }
 
 /**
- * Hook: create WP user when a donation is confirmed.
- * Fires on status transition to 'publish' (successful payment).
+ * Hook: ensure donor has a WP user when a donation is confirmed.
+ *
+ * Resolution order (first match wins):
+ *   1. Donor already has a valid linked user_id -> stop.
+ *   2. WP user exists matching donor's PRIMARY email -> link + add role.
+ *   3. WP user exists matching CHECKOUT email -> link + add role.
+ *   4. No match -> create new WP user with donor's primary email.
+ *
+ * This prevents duplicate WP users for multi-email donors and avoids
+ * relinking when an existing link is valid.
  */
 add_action( 'give_update_payment_status', 'acasa_on_donation_confirmed', 10, 3 );
 
 function acasa_on_donation_confirmed( $payment_id, $new_status, $old_status ) {
-    // Only act on transitions TO 'publish' (confirmed payment).
-    if ( 'publish' !== $new_status ) {
-        return;
-    }
-    // Guard against re-running if already was publish.
-    if ( 'publish' === $old_status ) {
+    if ( 'publish' !== $new_status || 'publish' === $old_status ) {
         return;
     }
 
-    $email      = give_get_payment_user_email( $payment_id );
+    $checkout_email = give_get_payment_user_email( $payment_id );
+    $donor_id       = (int) give_get_payment_donor_id( $payment_id );
+
+    if ( $donor_id <= 0 ) {
+        acasa_donor_diag( 'donation-confirmed-skip', [
+            'payment_id'     => $payment_id,
+            'reason'         => 'no_donor_id',
+            'checkout_email' => $checkout_email,
+        ] );
+        return;
+    }
+
+    // Load donor record.
+    $donor = new Give_Donor( $donor_id );
+    if ( ! $donor || empty( $donor->id ) ) {
+        acasa_donor_diag( 'donation-confirmed-skip', [
+            'payment_id' => $payment_id,
+            'donor_id'   => $donor_id,
+            'reason'     => 'donor_not_found',
+        ] );
+        return;
+    }
+
+    $primary_email   = isset( $donor->email ) ? trim( (string) $donor->email ) : '';
+    $linked_user_id  = isset( $donor->user_id ) ? (int) $donor->user_id : 0;
+
+    // --- Step 1: Donor already linked to a valid WP user? ---
+    if ( $linked_user_id > 0 ) {
+        $linked_user = get_userdata( $linked_user_id );
+        if ( $linked_user ) {
+            // Ensure role is present on the already-linked user.
+            if ( ! in_array( 'give_donor', (array) $linked_user->roles, true ) ) {
+                $linked_user->add_role( 'give_donor' );
+            }
+            acasa_donor_diag( 'donation-confirmed-linked-exists', [
+                'payment_id'     => $payment_id,
+                'donor_id'       => $donor_id,
+                'user_id'        => $linked_user_id,
+                'checkout_email' => $checkout_email,
+                'primary_email'  => $primary_email,
+            ] );
+            return; // Done. Do not relink.
+        }
+        // Linked user_id is stale (user deleted). Fall through to find/create.
+        acasa_donor_diag( 'donation-confirmed-stale-link', [
+            'payment_id'    => $payment_id,
+            'donor_id'      => $donor_id,
+            'stale_user_id' => $linked_user_id,
+        ] );
+    }
+
+    // --- Step 2: WP user matching donor's primary email? ---
+    $user = null;
+    if ( $primary_email !== '' && is_email( $primary_email ) ) {
+        $user = get_user_by( 'email', $primary_email );
+    }
+
+    // --- Step 3: WP user matching checkout email? ---
+    if ( ! $user && $checkout_email !== '' && $checkout_email !== $primary_email && is_email( $checkout_email ) ) {
+        $user = get_user_by( 'email', $checkout_email );
+    }
+
+    if ( $user ) {
+        // Found existing user. Add role and link.
+        if ( ! in_array( 'give_donor', (array) $user->roles, true ) ) {
+            $user->add_role( 'give_donor' );
+        }
+        acasa_link_donor_to_user( $donor_id, (int) $user->ID );
+        acasa_donor_diag( 'donation-confirmed-linked-existing', [
+            'payment_id'    => $payment_id,
+            'donor_id'      => $donor_id,
+            'user_id'       => $user->ID,
+            'matched_email' => $user->user_email,
+        ] );
+        return;
+    }
+
+    // --- Step 4: Create new WP user with donor's primary email. ---
+    $create_email = ( $primary_email !== '' && is_email( $primary_email ) )
+        ? $primary_email
+        : $checkout_email;
+
+    if ( empty( $create_email ) || ! is_email( $create_email ) ) {
+        acasa_donor_diag( 'donation-confirmed-skip', [
+            'payment_id' => $payment_id,
+            'donor_id'   => $donor_id,
+            'reason'     => 'no_valid_email',
+        ] );
+        return;
+    }
+
     $user_info  = give_get_payment_meta_user_info( $payment_id );
     $first_name = $user_info['first_name'] ?? '';
     $last_name  = $user_info['last_name'] ?? '';
-    $donor_id   = give_get_payment_donor_id( $payment_id );
 
-    acasa_ensure_donor_wp_user( $email, $first_name, $last_name, (int) $donor_id );
+    $result = acasa_ensure_donor_wp_user( $create_email, $first_name, $last_name, $donor_id );
+    acasa_donor_diag( 'donation-confirmed-created', [
+        'payment_id'   => $payment_id,
+        'donor_id'     => $donor_id,
+        'create_email' => $create_email,
+        'result'       => is_wp_error( $result ) ? $result->get_error_message() : $result,
+    ] );
 }
 
 /**
