@@ -1,10 +1,10 @@
-# Donor Access Hardening Implementation Plan
+﻿# Donor Access Hardening Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Harden donor avatar uploads, prevent duplicate WP users from multi-email donors, stabilize donor-user linking, and add a Donor Health diagnostic tab to acasa-data-tools.
 
-**Architecture:** Part 1 adds REST preflight hooks and rewrites the donation-confirmed flow in the child theme's `inc/donor-access.php`. Part 2 adds a new `Acasa_Donor_Health` class and admin view to the existing `acasa-data-tools` plugin, following the same static-method + AJAX pattern as existing tabs.
+**Architecture:** Part 1 adds REST preflight hooks and rewrites the donation-confirmed flow in `wp-content/plugins/acasa-donor-access/includes-donor-access.php`. Part 2 adds a new `Acasa_Donor_Health` class and admin view to the existing `acasa-data-tools` plugin, following the same static-method + AJAX pattern as existing tabs.
 
 **Tech Stack:** WordPress REST API hooks (`rest_request_before_callbacks`), GiveWP `Give_Donor` class, `Give()->donor_meta` API, `give_donormeta` table (`additional_email` meta_key), `dbDelta()` for audit table.
 
@@ -48,7 +48,7 @@ git checkout -b task/donor-hardening-codex
 ## Task 2: Add diagnostic logging helper
 
 **Files:**
-- Modify: `acasa-child/inc/donor-access.php` (add after line 16, before shared helpers)
+- Modify: `acasa-donor-access/includes-donor-access.php` (add after line 16, before shared helpers)
 
 **Step 1: Add the helper function**
 
@@ -89,7 +89,7 @@ Expected: `loaded`
 
 **Step 3: Commit**
 ```bash
-git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" add inc/donor-access.php
+git -C "W:/www/acasa/app/public/wp-content/plugins/acasa-donor-access" add includes-donor-access.php
 git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(donor): add diagnostic logging helper with PII hashing"
 ```
 
@@ -98,7 +98,7 @@ git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(d
 ## Task 3: Avatar preflight guard + upload size guard
 
 **Files:**
-- Modify: `acasa-child/inc/donor-access.php` (add new section after the avatar admin save block, before the GiveWP-required guard at line 366)
+- Modify: `acasa-donor-access/includes-donor-access.php` (add new section after the avatar admin save block, before the GiveWP-required guard at line 366)
 
 **Step 1: Add the REST preflight hook**
 
@@ -228,7 +228,7 @@ function acasa_avatar_upload_preflight( $response, $handler, WP_REST_Request $re
 
 **Step 3: Commit**
 ```bash
-git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" add inc/donor-access.php
+git -C "W:/www/acasa/app/public/wp-content/plugins/acasa-donor-access" add includes-donor-access.php
 git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(donor): avatar preflight guard + upload size guard"
 ```
 
@@ -237,7 +237,7 @@ git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(d
 ## Task 4: Profile payload normalization shim
 
 **Files:**
-- Modify: `acasa-child/inc/donor-access.php` (add after the avatar preflight hook)
+- Modify: `acasa-donor-access/includes-donor-access.php` (add after the avatar preflight hook)
 
 **Step 1: Add the profile normalization hook**
 
@@ -297,7 +297,7 @@ function acasa_profile_payload_normalize( $response, $handler, WP_REST_Request $
 
 **Step 3: Commit**
 ```bash
-git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" add inc/donor-access.php
+git -C "W:/www/acasa/app/public/wp-content/plugins/acasa-donor-access" add includes-donor-access.php
 git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(donor): profile payload normalization for known avatar failures"
 ```
 
@@ -308,7 +308,7 @@ git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(d
 This is the most critical task. Rewrites `acasa_on_donation_confirmed()` with the new resolution order: linked user -> primary email user -> checkout email user -> create new.
 
 **Files:**
-- Modify: `acasa-child/inc/donor-access.php:488-511` (replace entire function)
+- Modify: `acasa-donor-access/includes-donor-access.php:488-511` (replace entire function)
 
 **Step 1: Replace `acasa_on_donation_confirmed()`**
 
@@ -455,7 +455,7 @@ Verify donor data is accessible.
 
 **Step 4: Commit**
 ```bash
-git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" add inc/donor-access.php
+git -C "W:/www/acasa/app/public/wp-content/plugins/acasa-donor-access" add includes-donor-access.php
 git -C "W:/www/acasa/app/public/wp-content/themes/acasa-child" commit -m "feat(donor): rewrite donation-confirmed flow with multi-email consolidation
 
 Resolution order: linked user -> primary email -> checkout email -> create.
@@ -649,3 +649,4 @@ Before requesting deploy approval:
 8. [ ] Magic link login + logout cycle works
 9. [ ] Header avatar renders correctly for logged-in donor
 10. [ ] No new PHP warnings in error log during normal operation
+
