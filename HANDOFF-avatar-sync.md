@@ -1,4 +1,4 @@
-# Avatar Sync Handoff (GiveWP Canonical)
+﻿# Avatar Sync Handoff (GiveWP Canonical)
 
 ## Read First
 This handoff documents the current implementation state for donor avatar/profile sync and what to do next.
@@ -54,7 +54,7 @@ P0 for next release:
 12. Sync Donors admin tool now provides detailed tabular reports and robust donor link fallback when Give donor service is unavailable.
 
 ## Files Changed
-- `inc/donor-access.php`
+- `acasa-donor-access/includes-donor-access.php`
 - `functions.php`
 - `header-v1.css`
 - `.gitignore`
@@ -75,7 +75,7 @@ P0 for next release:
   - Fallback: direct SQL update on `{$wpdb->donors}.user_id`
 
 ## Key Anchors
-- `inc/donor-access.php`: functions
+- `acasa-donor-access/includes-donor-access.php`: functions
   - `acasa_default_account_label`
   - `acasa_track_display_name_override`
   - `acasa_capture_give_profile_name_intent`
@@ -106,7 +106,7 @@ P0 for next release:
 
 ## Related Docs
 - `W:\www\acasa\app\public\sources\donor-access-design.md`
-- `W:\www\acasa\app\public\sources\donor-acces-implementation-plan.md`
+- `W:\www\acasa\app\public\sources\donor-access-implementation-plan.md`
 
 ## Validation Checklist
 1. Donor uploads avatar in GiveWP Donor Dashboard.
@@ -127,3 +127,4 @@ P0 for next release:
 ## If Additional Work Is Needed
 - Focus on integration/edge cases, not new avatar storage models.
 - Keep GiveWP ownership checks and security behavior intact.
+

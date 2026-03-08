@@ -132,6 +132,103 @@ add_action('wp_enqueue_scripts', function () {
 }, 20);
 
 /**
+ * Keep Give iframe style handle available without duplicate CSS network request.
+ * Plugin enqueues the same stylesheet under two different handles.
+ */
+add_action('wp_enqueue_scripts', function (): void {
+    if (is_admin()) {
+        return;
+    }
+
+    if (!wp_style_is('euplatesc-givewp-gateway', 'enqueued') || !wp_style_is('givewp-iframes-styles', 'enqueued')) {
+        return;
+    }
+
+    wp_dequeue_style('givewp-iframes-styles');
+    wp_deregister_style('givewp-iframes-styles');
+    wp_register_style('givewp-iframes-styles', false, ['euplatesc-givewp-gateway', 'give-sequoia-template-css']);
+    wp_enqueue_style('givewp-iframes-styles');
+}, 1000);
+
+/**
+ * Determine whether current request likely needs Give frontend app assets.
+ */
+function acasa_request_needs_give_frontend_assets(): bool {
+    if (is_admin() || is_customize_preview()) {
+        return true;
+    }
+
+    $force_keep = (bool) apply_filters('acasa_force_keep_give_frontend_assets', false);
+    if ($force_keep) {
+        return true;
+    }
+
+    if (!is_singular()) {
+        return false;
+    }
+
+    $post = get_queried_object();
+    if (!($post instanceof WP_Post) || !is_string($post->post_content)) {
+        return false;
+    }
+
+    $content = $post->post_content;
+    $give_shortcodes = [
+        'give_form',
+        'give_donation_history',
+        'give_receipt',
+        'give_profile_editor',
+    ];
+
+    foreach ($give_shortcodes as $shortcode) {
+        if (has_shortcode($content, $shortcode)) {
+            return true;
+        }
+    }
+
+    // GiveWP block markup in post content.
+    if (strpos($content, 'wp:give/') !== false || strpos($content, 'wp:givewp/') !== false) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Frontend performance guard:
+ * remove Give React/editor payload on pages that do not render Give content.
+ */
+function acasa_prune_frontend_give_editor_payload(): void {
+    static $ran = false;
+    if ($ran) {
+        return;
+    }
+    $ran = true;
+
+    $enabled = (bool) apply_filters('acasa_prune_frontend_give_editor_payload', true);
+    if (!$enabled || acasa_request_needs_give_frontend_assets()) {
+        return;
+    }
+
+    $handles = [
+        'give-funds-script-frontend',
+        'givewp-entities-public',
+        'wp-block-editor',
+        'wp-components',
+        'wp-blocks',
+        'wp-date',
+    ];
+
+    foreach ($handles as $handle) {
+        if (wp_script_is($handle, 'enqueued')) {
+            wp_dequeue_script($handle);
+        }
+    }
+}
+add_action('wp_print_scripts', 'acasa_prune_frontend_give_editor_payload', 1);
+add_action('wp_print_footer_scripts', 'acasa_prune_frontend_give_editor_payload', 1);
+
+/**
  * Convert same-site absolute URL to root-relative URL.
  * Keeps local/live-link environments resilient when host differs.
  */
@@ -364,6 +461,10 @@ function acasa_render_header_settings_page(): void {
     $enabled = acasa_is_mega_menu_enabled();
     $menu_editor_url = admin_url('admin.php?page=acasa-menu-layout-editor');
     $branding_url = admin_url('admin.php?page=acasa-branding');
+    $sync_donors_url = admin_url('admin.php?page=acasa-sync-donors');
+    $email_blocks_url = admin_url('admin.php?page=acasa-email-blocks');
+    $donor_quick_fix_url = admin_url('admin.php?page=acasa-donor-quick-fix');
+    $donor_health_url = admin_url('admin.php?page=acasa-donor-health');
 
     echo '<div class="wrap">';
     echo '<h1>ACASA</h1>';
@@ -386,6 +487,18 @@ function acasa_render_header_settings_page(): void {
     echo '</form>';
     echo '<p><a class="button button-secondary" href="' . esc_url($menu_editor_url) . '">Open ACASA Menu Element Editor</a></p>';
     echo '<p><a class="button button-secondary" href="' . esc_url($branding_url) . '">Open ACASA Branding Tool</a></p>';
+    if (class_exists('Acasa_Data_Tools') || function_exists('acasa_render_sync_donors_page')) {
+        echo '<hr />';
+        echo '<h2>Donor Tools</h2>';
+        if (function_exists('acasa_render_sync_donors_page') || class_exists('Acasa_Data_Tools')) {
+            echo '<p><a class="button button-secondary" href="' . esc_url($sync_donors_url) . '">Open Donor Sync</a></p>';
+        }
+        if (class_exists('Acasa_Data_Tools')) {
+            echo '<p><a class="button button-secondary" href="' . esc_url($email_blocks_url) . '">Open Donor Email Blocks</a></p>';
+            echo '<p><a class="button button-secondary" href="' . esc_url($donor_quick_fix_url) . '">Open Donor Quick Fix</a></p>';
+            echo '<p><a class="button button-secondary" href="' . esc_url($donor_health_url) . '">Open Donor Health</a></p>';
+        }
+    }
     echo '</div>';
 }
 
@@ -2457,4 +2570,14 @@ function acasa_render_branding_tools_page(): void {
     echo '</div>';
 }
 
-require get_stylesheet_directory() . '/inc/donor-access.php';
+add_action('admin_notices', function (): void {
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+
+    if (function_exists('acasa_current_user_is_donor')) {
+        return;
+    }
+
+    echo '<div class="notice notice-warning"><p><strong>ACASA Child:</strong> Please activate <code>ACASA Donor Access</code> to enable donor account flows, avatar sync, and donor tools.</p></div>';
+});
