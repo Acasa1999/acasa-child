@@ -120,10 +120,7 @@ body::before {
         gap: 0;
     }
 
-    .site-header #site-navigation .main-nav > ul > li.menu-item-has-children > a .dropdown-menu-toggle {
-        display: none;
-    }
-
+    .site-header #site-navigation .main-nav > ul > li.menu-item-has-children > a .dropdown-menu-toggle,
     .site-header #site-navigation .main-nav > ul > li.menu-item-has-children > a .gb-submenu-toggle {
         display: none;
     }

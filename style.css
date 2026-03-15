@@ -28,21 +28,15 @@
     text-decoration: none;
 }
 
-/* Hover: lift the card, keep text dark on the yellow background */
+/* Hover: lift the card, keep paragraph text dark on the yellow background */
 .gb-element-b4ee33b8:is(:hover, :focus),
 .gb-element-3da1e3bf:is(:hover, :focus),
 .gb-element-f2d85368:is(:hover, :focus) {
     transform: translateY(-3px);
 }
 
-.gb-element-b4ee33b8:is(:hover, :focus) a,
-.gb-element-b4ee33b8:is(:hover, :focus) h3 a,
 .gb-element-b4ee33b8:is(:hover, :focus) p,
-.gb-element-3da1e3bf:is(:hover, :focus) a,
-.gb-element-3da1e3bf:is(:hover, :focus) h3 a,
 .gb-element-3da1e3bf:is(:hover, :focus) p,
-.gb-element-f2d85368:is(:hover, :focus) a,
-.gb-element-f2d85368:is(:hover, :focus) h3 a,
 .gb-element-f2d85368:is(:hover, :focus) p {
     color: var(--contrast, #1C1C2A) !important;
 }
@@ -90,10 +84,7 @@ body {
     background-size: 100% 100%;
 }
 
-/* Exclude buttons, images, and CTA card links from the underline */
-.entry-content .wp-block-button__link,
-.entry-content a.gb-button,
-.entry-content a[class*="gb-media"],
+/* Exclude CTA card links from the underline (buttons/images already excluded by :not() chain) */
 .entry-content .gb-element-b4ee33b8 a,
 .entry-content .gb-element-3da1e3bf a,
 .entry-content .gb-element-f2d85368 a {
