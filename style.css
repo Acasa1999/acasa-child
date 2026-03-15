@@ -3,3 +3,244 @@
  Template: generatepress
  Version: 2.0
 */
+
+/* ==========================================================================
+   1. CTA card boxes (Donează / Voluntar / Redirecționează 3,5%)
+   --------------------------------------------------------------------------
+   GP sets content_link_color to yellow, which is invisible on the white box
+   and on the yellow hover background. Fix: force dark text in both states.
+   Keep the yellow hover background from GenerateBlocks — just fix the text.
+   ========================================================================== */
+.gb-element-b4ee33b8,
+.gb-element-3da1e3bf,
+.gb-element-f2d85368 {
+    transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+/* Links & text inside CTA boxes: always dark, never yellow */
+.gb-element-b4ee33b8 a,
+.gb-element-3da1e3bf a,
+.gb-element-f2d85368 a,
+.gb-element-b4ee33b8 h3 a,
+.gb-element-3da1e3bf h3 a,
+.gb-element-f2d85368 h3 a {
+    color: var(--contrast, #1C1C2A) !important;
+    text-decoration: none;
+}
+
+/* Hover: lift the card, keep text dark on the yellow background */
+.gb-element-b4ee33b8:is(:hover, :focus),
+.gb-element-3da1e3bf:is(:hover, :focus),
+.gb-element-f2d85368:is(:hover, :focus) {
+    transform: translateY(-3px);
+}
+
+.gb-element-b4ee33b8:is(:hover, :focus) a,
+.gb-element-b4ee33b8:is(:hover, :focus) h3 a,
+.gb-element-b4ee33b8:is(:hover, :focus) p,
+.gb-element-3da1e3bf:is(:hover, :focus) a,
+.gb-element-3da1e3bf:is(:hover, :focus) h3 a,
+.gb-element-3da1e3bf:is(:hover, :focus) p,
+.gb-element-f2d85368:is(:hover, :focus) a,
+.gb-element-f2d85368:is(:hover, :focus) h3 a,
+.gb-element-f2d85368:is(:hover, :focus) p {
+    color: var(--contrast, #1C1C2A) !important;
+}
+
+/* ==========================================================================
+   2. Top yellow brand stripe — sticky on scroll
+   --------------------------------------------------------------------------
+   Overrides header-v1.css body::before to stay fixed at top of viewport.
+   ========================================================================== */
+body::before {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+/* Push body content down so the fixed stripe doesn't overlap the header */
+body {
+    padding-top: 6px;
+}
+
+/* ==========================================================================
+   3. Content links — yellow underline highlight
+   --------------------------------------------------------------------------
+   Applies the box-shadow "marker highlight" to content-area links only.
+   Scoped to .entry-content to avoid touching the site header/nav/footer.
+   ========================================================================== */
+.entry-content a:not(.wp-block-button__link):not(.gb-button):not([class*="gb-media"]) {
+    color: var(--contrast, #1C1C2A);
+    text-decoration: none;
+    background-image: linear-gradient(var(--accent-3, #FCD602), var(--accent-3, #FCD602));
+    background-position: 0 100%;
+    background-size: 100% 0.28em;
+    background-repeat: no-repeat;
+    padding: 0.1em 0.25em;
+    margin: 0 -0.1em;
+    border-radius: 4px;
+    transition: background-size 0.15s ease;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
+.entry-content a:not(.wp-block-button__link):not(.gb-button):not([class*="gb-media"]):hover {
+    background-size: 100% 100%;
+}
+
+/* Exclude buttons, images, and CTA card links from the underline */
+.entry-content .wp-block-button__link,
+.entry-content a.gb-button,
+.entry-content a[class*="gb-media"],
+.entry-content .gb-element-b4ee33b8 a,
+.entry-content .gb-element-3da1e3bf a,
+.entry-content .gb-element-f2d85368 a {
+    background-image: none !important;
+}
+
+/* ==========================================================================
+   4. Button System (§8 branding manual)
+   --------------------------------------------------------------------------
+   Three tiers:
+     Primary  — yellow bg, near-black text  (default for all buttons)
+     Secondary — outline, near-black border/text → fills dark on hover
+     Donate   — primary + warning stripe (handled in header-v1.css)
+
+   All buttons: 8px radius, 0.15s transitions, translateY(-2px) lift on hover.
+   Targets: WP core (.wp-block-button__link), GB (.gb-button), GP forms.
+   ========================================================================== */
+
+/* ── 4a. Primary button (default for all buttons) ── */
+.wp-block-button__link,
+.gb-button {
+    background-color: var(--accent, #FCD602) !important;
+    color: var(--contrast, #1C1C2A) !important;
+    border-radius: var(--r-btn, 8px) !important;
+    border: none;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.15s ease, transform 0.15s ease, filter 0.15s ease;
+}
+
+.wp-block-button__link:hover,
+.gb-button:hover {
+    filter: brightness(1.06);
+    transform: translateY(-2px);
+}
+
+.wp-block-button__link:active,
+.gb-button:active {
+    filter: brightness(0.94);
+    transform: translateY(0);
+}
+
+/* ── 4b. Secondary / outline button ── */
+.is-style-outline .wp-block-button__link,
+.gb-button.gbp-button--secondary {
+    background-color: transparent !important;
+    color: var(--contrast, #1C1C2A) !important;
+    border: 2px solid var(--contrast, #1C1C2A) !important;
+    box-shadow: none !important;
+}
+
+.is-style-outline .wp-block-button__link:hover,
+.gb-button.gbp-button--secondary:hover {
+    background-color: var(--contrast, #1C1C2A) !important;
+    color: var(--accent, #FCD602) !important;
+    border-color: var(--contrast, #1C1C2A) !important;
+    transform: translateY(-2px);
+}
+
+.is-style-outline .wp-block-button__link:active,
+.gb-button.gbp-button--secondary:active {
+    background-color: #000 !important;
+    color: var(--accent, #FCD602) !important;
+    transform: translateY(0);
+}
+
+/* ── 4c. Secondary on dark backgrounds ── */
+.has-contrast-background-color .is-style-outline .wp-block-button__link,
+.gb-button.gbp-button--secondary--on-dark {
+    border-color: rgba(255,255,255,0.5) !important;
+    color: #fff !important;
+    background-color: transparent !important;
+}
+
+.has-contrast-background-color .is-style-outline .wp-block-button__link:hover,
+.gb-button.gbp-button--secondary--on-dark:hover {
+    background-color: #fff !important;
+    color: var(--contrast, #1C1C2A) !important;
+    border-color: #fff !important;
+}
+
+/* ── 4d. GiveWP form buttons ── */
+.give-btn,
+.give-submit,
+[id^="give-purchase-button"] {
+    background-color: var(--accent, #FCD602) !important;
+    color: var(--contrast, #1C1C2A) !important;
+    border-radius: var(--r-btn, 8px);
+    border: none;
+    font-weight: 600;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.give-btn:hover,
+.give-submit:hover,
+[id^="give-purchase-button"]:hover {
+    background-color: var(--yellow-dark, #E8C400) !important;
+    transform: translateY(-2px);
+}
+
+/* ── 4e. GiveWP campaign donate buttons ── */
+.givewp-campaign-donate-button button,
+[class*="givewp-campaign"] button,
+[class*="give-campaign"] button {
+    background-color: var(--accent, #FCD602) !important;
+    color: var(--contrast, #1C1C2A) !important;
+    border-radius: var(--r-btn, 8px) !important;
+    border: none;
+    font-weight: 600;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.givewp-campaign-donate-button button:hover,
+[class*="givewp-campaign"] button:hover,
+[class*="give-campaign"] button:hover {
+    filter: brightness(1.06);
+    transform: translateY(-2px);
+}
+
+/* ── 4f. Ensure yellow-dark/darker CSS vars are available ── */
+:root {
+    --yellow-dark: #E8C400;
+    --yellow-darker: #D4A800;
+}
+
+/* ==========================================================================
+   5. GiveWP visual integration — brand fonts + contrast-safe colors
+   --------------------------------------------------------------------------
+   Campaign "Donate" buttons render OUTSIDE the iframe. GiveWP hardcodes a
+   system font stack and white text (color:#fff). Override to use Barlow +
+   dark text on yellow, matching the brand button system (§8).
+   The iframe form interior is styled via give_get_option_custom_form_styles
+   filter in functions.php.
+   ========================================================================== */
+
+/* ── 5a. Campaign modal-open button (outside iframe) ── */
+.givewp-donation-form-modal__open,
+.givewp-donation-form-link {
+    font-family: 'Barlow', 'Inter', system-ui, sans-serif !important;
+    color: var(--contrast, #1C1C2A) !important;
+    border-radius: var(--r-btn, 8px) !important;
+    font-weight: 600 !important;
+    transition: filter 0.15s ease, transform 0.15s ease !important;
+}
+
+.givewp-donation-form-modal__open:hover,
+.givewp-donation-form-link:hover {
+    filter: brightness(1.06);
+    transform: translateY(-2px);
+}

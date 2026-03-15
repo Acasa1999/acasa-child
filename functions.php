@@ -2581,3 +2581,131 @@ add_action('admin_notices', function (): void {
 
     echo '<div class="notice notice-warning"><p><strong>ACASA Child:</strong> Please activate <code>ACASA Donor Access</code> to enable donor account flows, avatar sync, and donor tools.</p></div>';
 });
+
+/* ── [acasa_copy] shortcode — click-to-copy inline field ── */
+add_shortcode('acasa_copy', function ($atts) {
+    $a = shortcode_atts(['value' => ''], $atts);
+    $v = esc_attr($a['value']);
+    $id = 'acasa-copy-' . wp_unique_id();
+    return '<span class="acasa-copy-field" id="' . $id . '" style="display:inline-flex;align-items:center;gap:8px;background:#f5f5f5;border:2px solid var(--accent-3,#FCD602);border-radius:var(--r-btn,8px);padding:8px 14px;font-family:monospace;font-size:0.95em;cursor:pointer;user-select:all;transition:background .15s" onmouseenter="this.style.background=\'#fff\'" onmouseleave="this.style.background=\'#f5f5f5\'" onclick="navigator.clipboard.writeText(\'' . $v . '\');var s=this.querySelector(\'em\');s.textContent=\'Copiat!\';setTimeout(function(){s.textContent=\'Copiază\'},1500)" title="Copiază">'
+        . '<strong>' . esc_html($a['value']) . '</strong>'
+        . '<em style="font-style:normal;font-family:sans-serif;font-size:0.8em;color:#888">Copiază</em>'
+        . '</span>';
+});
+
+/* ==========================================================================
+   GiveWP iframe form styles — brand fonts + contrast-safe colors
+   --------------------------------------------------------------------------
+   GiveWP donation forms render inside an iframe with isolated CSS.
+   The only way to inject theme styles is via the custom_form_styles option,
+   which GiveWP exposes through the give_get_option_custom_form_styles filter.
+   We load Barlow/Inter from the GP Font Library and override the CSS vars
+   to ensure dark-on-yellow button text (no white-on-yellow anywhere).
+   ========================================================================== */
+add_filter('give_get_option_custom_form_styles', function ($css) {
+    $font_base = '/wp-content/uploads/generatepress/fonts';
+    return $css . <<<GIVECSS
+
+/* ── ACASA brand fonts (loaded from GP Font Library) ── */
+@font-face {
+    font-display: swap;
+    font-family: "Barlow";
+    font-style: normal;
+    font-weight: 600;
+    src: url('{$font_base}/barlow/7cHqv4kjgoGqM7E30-8c5VAtlT47dw.woff2') format('woff2');
+}
+@font-face {
+    font-display: swap;
+    font-family: "Barlow";
+    font-style: normal;
+    font-weight: 700;
+    src: url('{$font_base}/barlow/7cHqv4kjgoGqM7E3t-4c5VAtlT47dw.woff2') format('woff2');
+}
+@font-face {
+    font-display: swap;
+    font-family: "Barlow";
+    font-style: normal;
+    font-weight: 800;
+    src: url('{$font_base}/barlow/7cHqv4kjgoGqM7E3q-0c5VAtlT47dw.woff2') format('woff2');
+}
+@font-face {
+    font-display: swap;
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    src: url('{$font_base}/inter/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0I5nvwU.woff2') format('woff2');
+}
+
+/* ── Contrast-safe color overrides (dark text on yellow buttons) ── */
+:root:not([data-theme=dark]), [data-theme=light] {
+    --primary-inverse: #1C1C2A;
+    --primary-hover: #E8C400;
+    --primary-focus: rgba(252, 214, 2, 0.2);
+}
+
+/* ── Force dark text on every yellow-background interactive element ── */
+
+/* Frequency toggle: selected tab ("O singură dată" / "Lunar") */
+[aria-checked="true"],
+[data-testid*="billing-period"][aria-pressed="true"],
+[role="tab"][aria-selected="true"],
+input[type="radio"]:checked + label,
+button[aria-current="true"] {
+    color: #1C1C2A !important;
+}
+
+/* Amount selector: selected amount ("RON 200.00") */
+[aria-pressed="true"],
+[data-testid*="amount"][aria-current="true"],
+.givewp-fields-amount--selected,
+button.givewp-fields-amount--selected {
+    color: #1C1C2A !important;
+}
+
+/* All buttons — dark text on yellow backgrounds */
+button,
+input[type="submit"],
+[role="button"] {
+    color: #1C1C2A !important;
+}
+/* GiveWP back-arrow button: icon-only by design, hide text */
+.givewp-donation-form__steps-header-previous-button {
+    font-size: 0 !important;
+    color: transparent !important;
+}
+
+/* Final submit button only — full CTA styling */
+button[type="submit"],
+input[type="submit"] {
+    font-weight: 700 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+    border-radius: 8px !important;
+    border: none !important;
+    transition: filter 0.16s ease, transform 0.12s ease !important;
+}
+button[type="submit"]:hover,
+input[type="submit"]:hover {
+    filter: brightness(1.06) !important;
+    transform: translateY(-2px) !important;
+}
+button[type="submit"]:active,
+input[type="submit"]:active {
+    filter: brightness(0.95) !important;
+    transform: translateY(0) !important;
+}
+
+/* ── Brand typography ──
+   @font-face names above are unavoidable (iframe has no parent CSS access),
+   but we set font-family ONCE here. If brand fonts change, update the
+   @font-face blocks + these two lines only. */
+body, .givewp-donation-form {
+    font-family: 'Inter', system-ui, sans-serif;
+}
+h1, h2, h3, h4, h5, h6,
+button, input[type=submit], [role=button] {
+    font-family: 'Barlow', 'Inter', system-ui, sans-serif;
+}
+
+GIVECSS;
+}, 10, 1);
