@@ -220,7 +220,14 @@ body {
    filter in functions.php.
    ========================================================================== */
 
-/* ── 5a. Campaign modal-open button (outside iframe) ── */
+/* ── 5a. GiveWP embed accent — override inline primary color ── */
+.root-data-givewp-embed,
+[class*="givewp-campaign"],
+[class*="give-campaign"] {
+    --givewp-primary-color: #FCD602 !important;
+}
+
+/* ── 5b. Campaign modal-open button (outside iframe) ── */
 .givewp-donation-form-modal__open,
 .givewp-donation-form-link {
     font-family: 'Barlow', 'Inter', system-ui, sans-serif !important;
@@ -234,4 +241,87 @@ body {
 .givewp-donation-form-link:hover {
     filter: brightness(1.06);
     transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   6. Query Loop pagination — pill-style page numbers
+   --------------------------------------------------------------------------
+   Targets the WP Query Loop pagination block used on archive/listing pages
+   (e.g. Vești de ACASĂ). Matches brand button system: 8px radius, yellow
+   accent for current page, subtle hover highlight.
+   ========================================================================== */
+
+/* ── 6a. Number container: horizontal layout with gap ── */
+.wp-block-query-pagination-numbers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+/* ── 6b. Individual page numbers ── */
+.wp-block-query-pagination-numbers .page-numbers {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.2em;
+    height: 2.2em;
+    padding: 0 0.5em;
+    border-radius: var(--r-btn, 8px);
+    font-family: 'Barlow', 'Inter', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+    color: var(--contrast, #1C1C2A);
+    background: transparent;
+    border: 1.5px solid rgba(16, 16, 20, 0.15);
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+/* ── 6c. Current page — yellow pill ── */
+.wp-block-query-pagination-numbers .page-numbers.current {
+    background-color: var(--accent, #FCD602);
+    border-color: var(--accent, #FCD602);
+    color: var(--contrast, #1C1C2A);
+}
+
+/* ── 6d. Hover state — yellow underline highlight ── */
+.wp-block-query-pagination-numbers a.page-numbers:hover {
+    border-color: var(--accent, #FCD602);
+    box-shadow: inset 0 -0.28em 0 0 var(--accent-3, #FCD602);
+    transform: translateY(-1px);
+}
+
+/* ── 6e. Ellipsis dots — no border/background ── */
+.wp-block-query-pagination-numbers .page-numbers.dots {
+    border: none;
+    background: none;
+    min-width: auto;
+    padding: 0 0.2em;
+    letter-spacing: 0.1em;
+}
+
+/* ── 6f. Prev/Next links — secondary button style ── */
+.wp-block-query-pagination-previous,
+.wp-block-query-pagination-next {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0.4em 0.9em;
+    border-radius: var(--r-btn, 8px);
+    font-family: 'Barlow', 'Inter', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+    color: var(--contrast, #1C1C2A);
+    border: 1.5px solid var(--contrast, #1C1C2A);
+    background: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.wp-block-query-pagination-previous:hover,
+.wp-block-query-pagination-next:hover {
+    background-color: var(--contrast, #1C1C2A);
+    color: var(--accent, #FCD602);
+    transform: translateY(-1px);
 }

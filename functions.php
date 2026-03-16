@@ -1365,8 +1365,11 @@ add_filter('give_get_option_custom_form_styles', function ($css) {
     src: url('{$font_base}/inter/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0I5nvwU.woff2') format('woff2');
 }
 
-/* ── Contrast-safe color overrides (dark text on yellow buttons) ── */
-:root:not([data-theme=dark]), [data-theme=light] {
+/* ── Brand accent: override GiveWP default primary (red/green → yellow) ── */
+:root, :root:not([data-theme=dark]), [data-theme=light] {
+    --givewp-primary-color: #FCD602 !important;
+    --give-primary-color: #FCD602 !important;
+    --primary: #FCD602;
     --primary-inverse: #1C1C2A;
     --primary-hover: #E8C400;
     --primary-focus: rgba(252, 214, 2, 0.2);
