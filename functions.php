@@ -1438,3 +1438,16 @@ button, input[type=submit], [role=button] {
 
 GIVECSS;
 }, 10, 1);
+
+/* ============================================================================
+   Donor Access dependency notice
+   ============================================================================ */
+add_action( 'admin_notices', function () {
+    if ( ! function_exists( 'is_plugin_active' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    }
+    if ( is_plugin_active( 'acasa-donor-access/acasa-donor-access.php' ) ) {
+        return;
+    }
+    echo '<div class="notice notice-warning"><p><strong>ACASA Donor Access</strong> nu este instalat sau activat. Donatorii nu vor primi conturi WordPress automat și nu vor avea acces la Donor Dashboard.</p></div>';
+} );
